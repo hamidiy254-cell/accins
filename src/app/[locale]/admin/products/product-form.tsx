@@ -2,8 +2,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { Upload, Loader2, X, Globe, Sparkles } from 'lucide-react';
-import { translateProduct } from '@/app/actions/translate';
+import { Upload, Loader2, X } from 'lucide-react';
 
 export function ProductForm({ product }: { product?: any }) {
   const supabase = createClient();
@@ -15,11 +14,7 @@ export function ProductForm({ product }: { product?: any }) {
 
   const [form, setForm] = useState({
     name: product?.name || '',
-    name_en: product?.name_en || '',
-    name_ar: product?.name_ar || '',
     description: product?.description || '',
-    description_en: product?.description_en || '',
-    description_ar: product?.description_ar || '',
     sku: product?.sku || '',
     price: product?.price || 0,
     old_price: product?.old_price || '',
@@ -32,7 +27,6 @@ export function ProductForm({ product }: { product?: any }) {
   
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [translating, setTranslating] = useState(false);
   const [error, setError] = useState('');
 
   const uploadImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,52 +51,13 @@ export function ProductForm({ product }: { product?: any }) {
     setForm({ ...form, images: form.images.filter((_, i) => i !== index) });
   };
 
-  const handleAutoTranslate = async () => {
-    if (!form.name.trim() && !form.description.trim()) {
-      alert("Veuillez d'abord remplir le nom ou la description en français.");
-      return;
-    }
-    
-    setTranslating(true);
-    try {
-      // Traduction en Anglais
-      const [nameEn, descEn] = await Promise.all([
-        form.name.trim() ? translateProduct(form.name, 'en') : Promise.resolve(''),
-        form.description.trim() ? translateProduct(form.description, 'en') : Promise.resolve(''),
-      ]);
-      
-      // Traduction en Arabe
-      const [nameAr, descAr] = await Promise.all([
-        form.name.trim() ? translateProduct(form.name, 'ar') : Promise.resolve(''),
-        form.description.trim() ? translateProduct(form.description, 'ar') : Promise.resolve(''),
-      ]);
-
-      setForm(prev => ({
-        ...prev,
-        name_en: nameEn,
-        description_en: descEn,
-        name_ar: nameAr,
-        description_ar: descAr,
-      }));
-    } catch (err) {
-      console.error(err);
-      alert("Erreur lors de la traduction. Vérifiez votre connexion et réessayez.");
-    } finally {
-      setTranslating(false);
-    }
-  };
-
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true); setError('');
     
     const payload = {
       name: form.name.trim(),
-      name_en: form.name_en.trim() || null,
-      name_ar: form.name_ar.trim() || null,
       description: form.description.trim() || null,
-      description_en: form.description_en.trim() || null,
-      description_ar: form.description_ar.trim() || null,
       sku: form.sku.trim() || null,
       price: Number(form.price),
       old_price: form.old_price ? Number(form.old_price) : null,
@@ -128,7 +83,7 @@ export function ProductForm({ product }: { product?: any }) {
   const inputClass = "w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl dark:bg-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition";
 
   return (
-    <form onSubmit={save} className="space-y-6 max-w-3xl">
+    <form onSubmit={save} className="space-y-6 max-w-2xl">
       <h1 className="font-display text-2xl font-bold">{product ? 'Modifier' : 'Nouveau'} produit</h1>
 
       {/* Infos de base */}
@@ -162,63 +117,19 @@ export function ProductForm({ product }: { product?: any }) {
         </div>
       </div>
 
-      {/* Traductions */}
-      <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-5 bg-slate-50 dark:bg-slate-900/50 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-            <Globe size={18} /> Traductions (Optionnel)
-          </h3>
-          <button
-            type="button"
-            onClick={handleAutoTranslate}
-            disabled={translating}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl text-sm font-semibold hover:from-indigo-700 hover:to-purple-700 transition disabled:opacity-50 shadow-sm"
-          >
-            {translating ? (
-              <><Loader2 size={16} className="animate-spin" /> Traduction en cours...</>
-            ) : (
-              <><Sparkles size={16} /> Traduire automatiquement</>
-            )}
-          </button>
-        </div>
-        <p className="text-xs text-slate-500">
-          Remplissez d'abord le nom et la description en français, puis cliquez sur "Traduire automatiquement" pour générer les versions anglaise et arabe.
-        </p>
-        
-        {/* FR */}
-        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">FR</span> 
-            <span className="text-sm font-medium">Français (Par défaut)</span>
-          </div>
-          <input required value={form.name} onChange={(e) => u('name', e.target.value)} placeholder="Nom du produit en français" className={inputClass} />
-          <textarea value={form.description} onChange={(e) => u('description', e.target.value)} placeholder="Description en français" rows={3} className={inputClass} />
-        </div>
+      <div>
+        <label className="block text-sm font-medium mb-1.5">Nom du produit <span className="text-red-500">*</span></label>
+        <input required value={form.name} onChange={(e) => u('name', e.target.value)} placeholder="Ex: Montre automatique..." className={inputClass} />
+      </div>
 
-        {/* EN */}
-        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">EN</span> 
-            <span className="text-sm font-medium">English</span>
-          </div>
-          <input value={form.name_en} onChange={(e) => u('name_en', e.target.value)} placeholder="Product name in English" className={inputClass} />
-          <textarea value={form.description_en} onChange={(e) => u('description_en', e.target.value)} placeholder="Description in English" rows={3} className={inputClass} />
-        </div>
-
-        {/* AR */}
-        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700" dir="rtl">
-          <div className="flex items-center gap-2 mb-1 justify-end">
-            <span className="text-sm font-medium">العربية</span> 
-            <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">AR</span>
-          </div>
-          <input value={form.name_ar} onChange={(e) => u('name_ar', e.target.value)} placeholder="اسم المنتج بالعربية" className={inputClass} />
-          <textarea value={form.description_ar} onChange={(e) => u('description_ar', e.target.value)} placeholder="وصف بالعربية" rows={3} className={inputClass} />
-        </div>
+      <div>
+        <label className="block text-sm font-medium mb-1.5">Description</label>
+        <textarea value={form.description} onChange={(e) => u('description', e.target.value)} rows={4} placeholder="Description detaillee..." className={inputClass} />
       </div>
 
       {/* Images */}
       <div>
-        <label className="block text-sm font-medium mb-2">Images du produit (Maximum 5 recommandé)</label>
+        <label className="block text-sm font-medium mb-2">Images du produit</label>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           {form.images.map((img, idx) => (
             <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
@@ -249,7 +160,6 @@ export function ProductForm({ product }: { product?: any }) {
             <input type="file" accept="image/*" multiple onChange={uploadImages} disabled={uploading} className="hidden" />
           </label>
         </div>
-        <p className="text-xs text-slate-500">La première image sera utilisée dans la boutique.</p>
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer p-3 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
