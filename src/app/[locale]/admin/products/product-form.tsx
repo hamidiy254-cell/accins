@@ -20,9 +20,10 @@ export function ProductForm({ product }: { product?: any }) {
     old_price: product?.old_price || '',
     stock: product?.stock || 0,
     store: product?.store || '',
-    sort_order: product?.sort_order || 0,
     images: initialImages as string[],
     is_active: product?.is_active ?? true,
+    // On garde sort_order mais on ne l'affiche plus dans le form
+    sort_order: product?.sort_order || 0, 
   });
   
   const [uploading, setUploading] = useState(false);
@@ -63,10 +64,10 @@ export function ProductForm({ product }: { product?: any }) {
       old_price: form.old_price ? Number(form.old_price) : null,
       stock: Number(form.stock),
       store: form.store.trim() || null,
-      sort_order: Number(form.sort_order),
       images: form.images,
       image_url: form.images[0] || null,
       is_active: form.is_active,
+      sort_order: form.sort_order,
     };
 
     const { error } = product
@@ -86,23 +87,18 @@ export function ProductForm({ product }: { product?: any }) {
     <form onSubmit={save} className="space-y-6 max-w-2xl">
       <h1 className="font-display text-2xl font-bold">{product ? 'Modifier' : 'Nouveau'} produit</h1>
 
-      {/* Infos de base */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
           <label className="block text-sm font-medium mb-1.5">SKU (Optionnel)</label>
           <input value={form.sku} onChange={(e) => u('sku', e.target.value)} placeholder="Ex: PROD-001" className={`${inputClass} font-mono`} />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1.5">Ordre d'affichage (Plus petit = en premier)</label>
-          <input type="number" value={form.sort_order} onChange={(e) => u('sort_order', e.target.value)} placeholder="Ex: 0, 1, 2..." className={inputClass} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div>
           <label className="block text-sm font-medium mb-1.5">Prix (DH) <span className="text-red-500">*</span></label>
           <input required type="number" step="0.01" min="0" value={form.price} onChange={(e) => u('price', e.target.value)} className={inputClass} />
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium mb-1.5">Ancien prix</label>
           <input type="number" step="0.01" min="0" value={form.old_price || ''} onChange={(e) => u('old_price', e.target.value)} className={inputClass} />
@@ -111,10 +107,11 @@ export function ProductForm({ product }: { product?: any }) {
           <label className="block text-sm font-medium mb-1.5">Stock</label>
           <input type="number" min="0" value={form.stock} onChange={(e) => u('stock', e.target.value)} className={inputClass} />
         </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Magasin</label>
-          <input value={form.store} onChange={(e) => u('store', e.target.value)} placeholder="Ex: Accins" className={inputClass} />
-        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1.5">Magasin</label>
+        <input value={form.store} onChange={(e) => u('store', e.target.value)} placeholder="Ex: Accins" className={inputClass} />
       </div>
 
       <div>
@@ -127,7 +124,6 @@ export function ProductForm({ product }: { product?: any }) {
         <textarea value={form.description} onChange={(e) => u('description', e.target.value)} rows={4} placeholder="Description detaillee..." className={inputClass} />
       </div>
 
-      {/* Images */}
       <div>
         <label className="block text-sm font-medium mb-2">Images du produit</label>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
@@ -139,24 +135,13 @@ export function ProductForm({ product }: { product?: any }) {
                   Principale
                 </div>
               )}
-              <button 
-                type="button" 
-                onClick={() => removeImage(idx)} 
-                className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition shadow-lg"
-              >
+              <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition shadow-lg">
                 <X size={14} />
               </button>
             </div>
           ))}
           <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition">
-            {uploading ? (
-              <Loader2 size={24} className="animate-spin text-indigo-500" />
-            ) : (
-              <>
-                <Upload size={24} className="text-slate-400 mb-2" />
-                <span className="text-xs text-slate-500 font-medium text-center px-2">Ajouter<br/>images</span>
-              </>
-            )}
+            {uploading ? <Loader2 size={24} className="animate-spin text-indigo-500" /> : <><Upload size={24} className="text-slate-400 mb-2" /><span className="text-xs text-slate-500 font-medium text-center px-2">Ajouter<br/>images</span></>}
             <input type="file" accept="image/*" multiple onChange={uploadImages} disabled={uploading} className="hidden" />
           </label>
         </div>
@@ -169,10 +154,7 @@ export function ProductForm({ product }: { product?: any }) {
 
       {error && <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 text-sm">{error}</div>}
 
-      <button 
-        disabled={saving} 
-        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
-      >
+      <button disabled={saving} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
         {saving ? <><Loader2 size={18} className="animate-spin" /> Enregistrement...</> : 'Enregistrer le produit'}
       </button>
     </form>
