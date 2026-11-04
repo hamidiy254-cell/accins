@@ -5,7 +5,7 @@ import { Globe, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 const locales = [
-  { code: 'fr', label: 'Francais', flag: 'FR' },
+  { code: 'fr', label: 'Français', flag: 'FR' },
   { code: 'en', label: 'English', flag: 'EN' },
   { code: 'ar', label: 'العربية', flag: 'AR' },
 ];
@@ -28,8 +28,10 @@ export function LanguageSwitcher() {
   const change = (newLocale: string) => {
     const segments = pathname.split('/');
     segments[1] = newLocale;
-    router.push(segments.join('/'));
-    setOpen(false);
+    const newPath = segments.join('/');
+    
+    // Hard reload bach n-damno bli les selects/options maytkhebawoch
+    window.location.href = newPath; 
   };
 
   const currentLang = locales.find(l => l.code === locale);
