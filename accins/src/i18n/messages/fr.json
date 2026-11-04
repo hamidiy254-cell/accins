@@ -1,0 +1,10 @@
+{
+  "nav": { "home": "Accueil", "products": "Produits", "cart": "Panier", "login": "Connexion", "register": "Inscription", "account": "Mon compte", "admin": "Admin", "logout": "Déconnexion" },
+  "home": { "title": "Bienvenue sur Accins", "subtitle": "Les meilleurs produits, livrés chez vous", "shop": "Acheter maintenant" },
+  "product": { "addToCart": "Ajouter au panier", "outOfStock": "Rupture de stock", "inStock": "En stock" },
+  "cart": { "title": "Votre Panier", "empty": "Votre panier est vide", "total": "Total", "checkout": "Commander", "remove": "Retirer" },
+  "checkout": { "title": "Finaliser la commande", "name": "Nom complet", "phone": "Téléphone", "address": "Adresse", "city": "Ville", "note": "Note (optionnel)", "coupon": "Code promo", "apply": "Appliquer", "order": "Confirmer la commande", "success": "Commande confirmée!" },
+  "auth": { "loginTitle": "Connexion", "registerTitle": "Créer un compte", "email": "Email", "password": "Mot de passe", "name": "Nom complet", "loginBtn": "Se connecter", "registerBtn": "S'inscrire", "noAccount": "Pas de compte ?", "hasAccount": "Déjà un compte ?" },
+  "admin": { "dashboard": "Tableau de bord", "products": "Produits", "orders": "Commandes", "coupons": "Coupons", "addProduct": "Ajouter produit", "edit": "Modifier", "delete": "Supprimer", "save": "Enregistrer", "filter": { "all": "Tout", "today": "Aujourd'hui", "yesterday": "Hier", "week": "7 derniers jours", "month": "Ce mois" }, "export": "Télécharger Excel", "columns": { "productId": "Product ID", "quantity": "Quantity", "customer": "Customer", "phone": "Phone", "address": "Adresse", "city": "City", "price": "Price", "store": "Store", "note": "Note", "order": "Order" } },
+  "common": { "loading": "Chargement...", "error": "Erreur", "success": "Succès", "price": "Prix", "quantity": "Quantité", "cancel": "Annuler" }
+}

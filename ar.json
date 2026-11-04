@@ -1,0 +1,6 @@
+// ar.json (excerpt)
+{
+  "nav": { "home": "الرئيسية", "products": "المنتجات", "cart": "السلة", "login": "تسجيل الدخول", "register": "إنشاء حساب", "account": "حسابي", "admin": "الإدارة", "logout": "تسجيل الخروج" },
+  "home": { "title": "مرحبا بكم في Accins", "subtitle": "أفضل المنتجات، توصيل لباب دارك", "shop": "تسوق الآن" },
+  "common": { "loading": "جاري التحميل...", "error": "خطأ", "success": "نجاح", "price": "السعر", "quantity": "الكمية", "cancel": "إلغاء" }
+}

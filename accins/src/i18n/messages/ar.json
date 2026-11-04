@@ -1,0 +1,10 @@
+{
+  "nav": { "home": "الرئيسية", "products": "المنتجات", "cart": "السلة", "login": "تسجيل الدخول", "register": "إنشاء حساب", "account": "حسابي", "admin": "الإدارة", "logout": "تسجيل الخروج" },
+  "home": { "title": "مرحبا بكم في Accins", "subtitle": "أفضل المنتجات، توصيل لباب دارك", "shop": "تسوق الآن" },
+  "product": { "addToCart": "أضف إلى السلة", "outOfStock": "غير متوفر", "inStock": "متوفر" },
+  "cart": { "title": "سلتك", "empty": "سلتك فارغة", "total": "المجموع", "checkout": "إتمام الطلب", "remove": "إزالة" },
+  "checkout": { "title": "إتمام الطلب", "name": "الاسم الكامل", "phone": "الهاتف", "address": "العنوان", "city": "المدينة", "note": "ملاحظة (اختياري)", "coupon": "كود الخصم", "apply": "تطبيق", "order": "تأكيد الطلب", "success": "تم تأكيد الطلب!" },
+  "auth": { "loginTitle": "تسجيل الدخول", "registerTitle": "إنشاء حساب", "email": "البريد الإلكتروني", "password": "كلمة المرور", "name": "الاسم الكامل", "loginBtn": "دخول", "registerBtn": "تسجيل", "noAccount": "ليس لديك حساب؟", "hasAccount": "لديك حساب بالفعل؟" },
+  "admin": { "dashboard": "لوحة التحكم", "products": "المنتجات", "orders": "الطلبات", "coupons": "الكوبونات", "addProduct": "إضافة منتج", "edit": "تعديل", "delete": "حذف", "save": "حفظ", "filter": { "all": "الكل", "today": "اليوم", "yesterday": "أمس", "week": "آخر 7 أيام", "month": "هذا الشهر" }, "export": "تحميل Excel", "columns": { "productId": "Product ID", "quantity": "Quantity", "customer": "Customer", "phone": "Phone", "address": "Address", "city": "City", "price": "Price", "store": "Store", "note": "Note", "order": "Order" } },
+  "common": { "loading": "جاري التحميل...", "error": "خطأ", "success": "نجاح", "price": "السعر", "quantity": "الكمية", "cancel": "إلغاء" }
+}
