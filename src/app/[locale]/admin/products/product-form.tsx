@@ -2,25 +2,29 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { Upload, Loader2, X, Image as ImageIcon } from 'lucide-react';
+import { Upload, Loader2, X, Globe } from 'lucide-react';
 
 export function ProductForm({ product }: { product?: any }) {
   const supabase = createClient();
   const router = useRouter();
   
-  // Initialisation des images (soit le tableau 'images', soit l'ancienne 'image_url')
   const initialImages = product?.images?.length > 0 
     ? product.images 
     : (product?.image_url ? [product.image_url] : []);
 
   const [form, setForm] = useState({
     name: product?.name || '',
-    sku: product?.sku || '',
+    name_en: product?.name_en || '',
+    name_ar: product?.name_ar || '',
     description: product?.description || '',
+    description_en: product?.description_en || '',
+    description_ar: product?.description_ar || '',
+    sku: product?.sku || '',
     price: product?.price || 0,
     old_price: product?.old_price || '',
     stock: product?.stock || 0,
     store: product?.store || '',
+    sort_order: product?.sort_order || 0,
     images: initialImages as string[],
     is_active: product?.is_active ?? true,
   });
@@ -32,28 +36,23 @@ export function ProductForm({ product }: { product?: any }) {
   const uploadImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    
     setUploading(true);
     const newImages = [...form.images];
-    
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const path = `${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
       const { error } = await supabase.storage.from('products').upload(path, file);
-      
       if (!error) {
         const { data } = supabase.storage.from('products').getPublicUrl(path);
         newImages.push(data.publicUrl);
       }
     }
-    
     setForm({ ...form, images: newImages });
     setUploading(false);
   };
 
   const removeImage = (index: number) => {
-    const newImages = form.images.filter((_, i) => i !== index);
-    setForm({ ...form, images: newImages });
+    setForm({ ...form, images: form.images.filter((_, i) => i !== index) });
   };
 
   const save = async (e: React.FormEvent) => {
@@ -62,14 +61,19 @@ export function ProductForm({ product }: { product?: any }) {
     
     const payload = {
       name: form.name.trim(),
-      sku: form.sku.trim() || null,
+      name_en: form.name_en.trim() || null,
+      name_ar: form.name_ar.trim() || null,
       description: form.description.trim() || null,
+      description_en: form.description_en.trim() || null,
+      description_ar: form.description_ar.trim() || null,
+      sku: form.sku.trim() || null,
       price: Number(form.price),
       old_price: form.old_price ? Number(form.old_price) : null,
       stock: Number(form.stock),
       store: form.store.trim() || null,
+      sort_order: Number(form.sort_order),
       images: form.images,
-      image_url: form.images[0] || null, // La premiere image comme image principale (compatibilite)
+      image_url: form.images[0] || null,
       is_active: form.is_active,
     };
 
@@ -87,23 +91,19 @@ export function ProductForm({ product }: { product?: any }) {
   const inputClass = "w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl dark:bg-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition";
 
   return (
-    <form onSubmit={save} className="space-y-6 max-w-2xl">
+    <form onSubmit={save} className="space-y-6 max-w-3xl">
       <h1 className="font-display text-2xl font-bold">{product ? 'Modifier' : 'Nouveau'} produit</h1>
 
+      {/* Infos de base */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Nom du produit <span className="text-red-500">*</span></label>
-          <input required value={form.name} onChange={(e) => u('name', e.target.value)} placeholder="Ex: Montre automatique..." className={inputClass} />
-        </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">SKU (Optionnel)</label>
           <input value={form.sku} onChange={(e) => u('sku', e.target.value)} placeholder="Ex: PROD-001" className={`${inputClass} font-mono`} />
         </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium mb-1.5">Description</label>
-        <textarea value={form.description} onChange={(e) => u('description', e.target.value)} rows={4} placeholder="Description detaillee..." className={inputClass} />
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Ordre d'affichage (Plus petit = en premier)</label>
+          <input type="number" value={form.sort_order} onChange={(e) => u('sort_order', e.target.value)} placeholder="Ex: 0, 1, 2..." className={inputClass} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -125,38 +125,50 @@ export function ProductForm({ product }: { product?: any }) {
         </div>
       </div>
 
-      {/* Section Images Multiples */}
-      <div>
-        <label className="block text-sm font-medium mb-2">Images du produit (Maximum 5 recommandé)</label>
+      {/* Traductions */}
+      <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-5 bg-slate-50 dark:bg-slate-900/50 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+          <Globe size={18} /> Traductions (Optionnel)
+        </h3>
         
+        {/* FR */}
+        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-2 mb-1"><span className="text-xs font-bold bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">FR</span> <span className="text-sm font-medium">Français (Par défaut)</span></div>
+          <input required value={form.name} onChange={(e) => u('name', e.target.value)} placeholder="Nom du produit en français" className={inputClass} />
+          <textarea value={form.description} onChange={(e) => u('description', e.target.value)} placeholder="Description en français" rows={2} className={inputClass} />
+        </div>
+
+        {/* EN */}
+        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-2 mb-1"><span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">EN</span> <span className="text-sm font-medium">English</span></div>
+          <input value={form.name_en} onChange={(e) => u('name_en', e.target.value)} placeholder="Product name in English" className={inputClass} />
+          <textarea value={form.description_en} onChange={(e) => u('description_en', e.target.value)} placeholder="Description in English" rows={2} className={inputClass} />
+        </div>
+
+        {/* AR */}
+        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-right" dir="rtl">
+          <div className="flex items-center gap-2 mb-1 justify-end"><span className="text-sm font-medium">العربية</span> <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">AR</span></div>
+          <input value={form.name_ar} onChange={(e) => u('name_ar', e.target.value)} placeholder="اسم المنتج بالعربية" className={inputClass} />
+          <textarea value={form.description_ar} onChange={(e) => u('description_ar', e.target.value)} placeholder="وصف بالعربية" rows={2} className={inputClass} />
+        </div>
+      </div>
+
+      {/* Images */}
+      <div>
+        <label className="block text-sm font-medium mb-2">Images du produit</label>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           {form.images.map((img, idx) => (
             <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
               <img src={img} alt={`Image ${idx + 1}`} className="w-full h-full object-cover" />
-              {idx === 0 && (
-                <div className="absolute top-1 left-1 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">
-                  Principale
-                </div>
-              )}
-              <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition shadow-lg">
-                <X size={14} />
-              </button>
+              {idx === 0 && <div className="absolute top-1 left-1 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">Principale</div>}
+              <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition shadow-lg"><X size={14} /></button>
             </div>
           ))}
-          
           <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition">
-            {uploading ? (
-              <Loader2 size={24} className="animate-spin text-indigo-500" />
-            ) : (
-              <>
-                <Upload size={24} className="text-slate-400 mb-2" />
-                <span className="text-xs text-slate-500 font-medium text-center px-2">Ajouter<br/>images</span>
-              </>
-            )}
+            {uploading ? <Loader2 size={24} className="animate-spin text-indigo-500" /> : <><Upload size={24} className="text-slate-400 mb-2" /><span className="text-xs text-slate-500 font-medium text-center px-2">Ajouter<br/>images</span></>}
             <input type="file" accept="image/*" multiple onChange={uploadImages} disabled={uploading} className="hidden" />
           </label>
         </div>
-        <p className="text-xs text-slate-500">La première image sera utilisée dans la boutique. Glissez-déposez pour réorganiser (à venir).</p>
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer p-3 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">

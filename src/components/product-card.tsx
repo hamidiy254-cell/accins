@@ -3,23 +3,29 @@ import Link from 'next/link';
 import { useCart } from '@/store/cart';
 import { useTranslations } from 'next-intl';
 import { ShoppingCart } from 'lucide-react';
+import { getLocalizedField } from '@/lib/i18n-utils';
 
 export function ProductCard({ product, locale }: { product: any; locale: string }) {
   const t = useTranslations('product');
   const add = useCart((s) => s.add);
+  
+  const localizedName = getLocalizedField(product, 'name', locale);
+  const localizedDesc = getLocalizedField(product, 'description', locale);
+  
   const discount = product.old_price && product.price < product.old_price
     ? Math.round((1 - product.price / product.old_price) * 100)
     : 0;
-  const desc = (product.description || '').trim();
-  const shortDesc = desc.length > 70 ? desc.slice(0, 70).trim() : desc;
-  const hasMore = desc.length > 70;
+    
+  const shortDesc = localizedDesc.length > 70 ? localizedDesc.slice(0, 70).trim() : localizedDesc;
+  const hasMore = localizedDesc.length > 70;
+  const mainImage = product.images?.[0] || product.image_url;
 
   return (
     <div className="group relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:shadow-2xl hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300 flex flex-col">
       <Link href={`/${locale}/products/${product.id}`} className="block">
         <div className="relative aspect-square bg-slate-100 dark:bg-slate-800 overflow-hidden">
-          { (product.images?.[0] || product.image_url) ? (
-            <img src={product.images?.[0] || product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+          {mainImage ? (
+            <img src={mainImage} alt={localizedName} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">{t('noImage')}</div>
           )}
@@ -35,9 +41,9 @@ export function ProductCard({ product, locale }: { product: any; locale: string 
       </Link>
       <div className="p-3 md:p-4 flex flex-col flex-1">
         <Link href={`/${locale}/products/${product.id}`}>
-          <h3 className="font-display font-semibold text-slate-900 dark:text-slate-100 truncate group-hover:text-indigo-600 transition text-sm md:text-base">{product.name}</h3>
+          <h3 className="font-display font-semibold text-slate-900 dark:text-slate-100 truncate group-hover:text-indigo-600 transition text-sm md:text-base">{localizedName}</h3>
         </Link>
-        {desc && (
+        {localizedDesc && (
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
             {shortDesc}
             {hasMore && (
@@ -51,7 +57,7 @@ export function ProductCard({ product, locale }: { product: any; locale: string 
         </div>
         <button
           disabled={product.stock === 0}
-          onClick={() => add({ id: product.id, name: product.name, price: Number(product.price), image_url: product.image_url, store: product.store })}
+          onClick={() => add({ id: product.id, name: localizedName, price: Number(product.price), image_url: mainImage, store: product.store })}
           className="mt-3 w-full flex items-center justify-center gap-2 bg-slate-900 dark:bg-white dark:text-slate-900 text-white py-2 md:py-2.5 rounded-xl font-medium text-sm hover:bg-indigo-600 dark:hover:bg-indigo-500 dark:hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <ShoppingCart size={16} />

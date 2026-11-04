@@ -10,7 +10,7 @@ export default async function HomePage({ params }: { params: Promise<{ locale: s
   const t = await getTranslations('home');
   const supabase = await createClient();
   const [{ data: products }, { count: orderCount }, { count: productCount }] = await Promise.all([
-    supabase.from('products').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(8),
+    supabase.from('products').select('*').eq('is_active', true).order('sort_order', { ascending: true }).order('created_at', { ascending: false }).limit(8),
     supabase.from('orders').select('*', { count: 'exact', head: true }),
     supabase.from('products').select('*', { count: 'exact', head: true }),
   ]);
