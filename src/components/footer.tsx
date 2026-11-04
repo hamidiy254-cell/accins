@@ -15,7 +15,7 @@ export function Footer() {
       <footer className="mt-20 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
         <div className="container-custom py-12 grid grid-cols-2 md:grid-cols-4 gap-8">
           <div className="col-span-2 md:col-span-1">
-            <Link href={/} className="flex items-center mb-4">
+            <Link href={`/${locale}`} className="flex items-center mb-4">
               <img src="https://i.postimg.cc/xT20mRmS/888096303-5554517731440102-3460106477980446364-n.png" alt="Accins" className="h-10 w-auto object-contain" />
             </Link>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">{t('tagline')}</p>
@@ -40,10 +40,7 @@ export function Footer() {
           </div>
           <div>
             <h4 className="font-display font-semibold mb-4 text-sm uppercase tracking-wider">{t('contact')}</h4>
-            <button
-              onClick={() => setOpenContact(true)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition w-full sm:w-auto justify-center"
-            >
+            <button onClick={() => setOpenContact(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition w-full sm:w-auto justify-center">
               <MessageSquare size={16} /> {t('contactUs')}
             </button>
             <p className="text-xs text-slate-500 mt-3 leading-relaxed">{t('contactUsSub')}</p>
@@ -53,7 +50,6 @@ export function Footer() {
           © {new Date().getFullYear()} Accins — {t('rights')}
         </div>
       </footer>
-
       <ContactModal open={openContact} onClose={() => setOpenContact(false)} />
     </>
   );

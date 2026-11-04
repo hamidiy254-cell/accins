@@ -62,7 +62,7 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl">
       <nav className="container-custom h-16 flex items-center justify-between gap-2">
-        <Link href={/} className="flex items-center shrink-0">
+        <Link href={`/${locale}`} className="flex items-center shrink-0">
           <img src="https://i.postimg.cc/xT20mRmS/888096303-5554517731440102-3460106477980446364-n.png" alt="Accins" className="h-10 md:h-12 w-auto object-contain" />
         </Link>
 
@@ -74,8 +74,7 @@ export function Navbar() {
 
         <div className="flex items-center gap-1">
           {role === 'admin' && (
-            <Link href={`/${locale}/admin`}
-              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-sm transition">
+            <Link href={`/${locale}/admin`} className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-sm transition">
               <ShieldCheck size={16} /> Admin
             </Link>
           )}
@@ -91,8 +90,7 @@ export function Navbar() {
 
           {user && (
             <div className="relative hidden md:block" ref={menuRef}>
-              <button onClick={() => setOpen(!open)}
-                className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+              <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
                   {user.email?.[0]?.toUpperCase()}
                 </div>
@@ -127,8 +125,7 @@ export function Navbar() {
           )}
 
           {!user && (
-            <Link href={`/${locale}/login`}
-              className="hidden md:inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm transition">
+            <Link href={`/${locale}/login`} className="hidden md:inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm transition">
               {t('login')}
             </Link>
           )}
@@ -150,9 +147,7 @@ export function Navbar() {
           <div className="absolute right-0 top-0 h-full w-80 max-w-[88vw] bg-white dark:bg-slate-900 shadow-2xl flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
               <span className="font-display font-bold text-lg">Menu</span>
-              <button onClick={closeMobile} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-                <X size={20} />
-              </button>
+              <button onClick={closeMobile} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X size={20} /></button>
             </div>
             {user && (
               <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
