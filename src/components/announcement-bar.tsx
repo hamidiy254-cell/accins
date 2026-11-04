@@ -1,17 +1,13 @@
 'use client';
-import { Truck, Banknote, X } from 'lucide-react';
-import { useState } from 'react';
+import { Truck, Banknote } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 export function AnnouncementBar() {
   const t = useTranslations('announcement');
-  const [visible, setVisible] = useState(true);
-  if (!visible) return null;
 
   return (
     <div className="relative bg-slate-900 text-white border-b border-slate-800">
-      <div className="container-custom py-2.5 pr-10 flex items-center justify-center">
-        
+      <div className="container-custom py-2.5 flex items-center justify-center">
         {/* Version Desktop */}
         <div className="hidden md:flex items-center gap-6 text-xs md:text-sm font-medium">
           <div className="flex items-center gap-2">
@@ -24,7 +20,7 @@ export function AnnouncementBar() {
           </div>
         </div>
 
-        {/* Version Mobile (Propre sur 2 lignes) */}
+        {/* Version Mobile */}
         <div className="flex md:hidden flex-col items-center justify-center text-[11px] sm:text-xs gap-1 font-medium">
           <div className="flex items-center gap-1.5">
             <Truck size={13} className="text-indigo-400" />
@@ -35,15 +31,7 @@ export function AnnouncementBar() {
             <span><strong>{t('cod')}</strong></span>
           </div>
         </div>
-
       </div>
-      <button
-        onClick={() => setVisible(false)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-white/10 rounded-lg transition"
-        aria-label={t('close')}
-      >
-        <X size={16} />
-      </button>
     </div>
   );
 }

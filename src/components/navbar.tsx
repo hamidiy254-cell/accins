@@ -187,9 +187,15 @@ export function Navbar() {
                 </>
               )}
             </nav>
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <LanguageSwitcher />
-              <ThemeToggle />
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Langue</span>
+                <LanguageSwitcher />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Thème</span>
+                <ThemeToggle />
+              </div>
             </div>
           </div>
         </div>
