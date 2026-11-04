@@ -5,15 +5,16 @@ import { useCart } from '@/store/cart';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { ThemeToggle } from './theme-toggle';
 import { LanguageSwitcher } from './language-switcher';
-import { ShoppingCart, User, ShieldCheck, LogOut, UserCircle, Package, Menu, X } from 'lucide-react';
+import { ShoppingCart, User, ShieldCheck, LogOut, UserCircle, Package, Menu, X, Globe } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 
 export function Navbar() {
   const t = useTranslations('nav');
   const locale = useLocale();
   const router = useRouter();
+  const pathname = usePathname();
   const items = useCart((s) => s.items);
   const hydrated = useHydrated();
   const count = hydrated ? items.reduce((a, i) => a + i.quantity, 0) : 0;
@@ -56,6 +57,18 @@ export function Navbar() {
     router.push(`/${locale}`);
     router.refresh();
   };
+
+  const changeLang = (newLocale: string) => {
+    const segments = pathname.split('/');
+    segments[1] = newLocale;
+    window.location.href = segments.join('/');
+  };
+
+  const langs = [
+    { code: 'fr', label: 'FR' },
+    { code: 'en', label: 'EN' },
+    { code: 'ar', label: 'AR' },
+  ];
 
   return (
     <header className="sticky top-0 z-[100] border-b border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-950">
@@ -139,7 +152,7 @@ export function Navbar() {
         </div>
       </nav>
 
-      {/* Mobile Menu - SOLIDE w PRO */}
+      {/* Mobile Menu */}
       {mobileOpen && (
         <div className="fixed inset-0 z-[120] md:hidden">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
@@ -192,13 +205,30 @@ export function Navbar() {
               )}
             </nav>
 
+            {/* FOOTER avec Langue INLINE + Theme */}
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50 dark:bg-slate-900">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Langue</span>
-                <LanguageSwitcher />
+              <div>
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">
+                  <Globe size={14} /> Langue
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {langs.map(l => (
+                    <button
+                      key={l.code}
+                      onClick={() => changeLang(l.code)}
+                      className={`py-2.5 rounded-lg text-sm font-bold border-2 transition ${
+                        locale === l.code 
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-indigo-300'
+                      }`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Thème</span>
+                <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Theme</span>
                 <ThemeToggle />
               </div>
             </div>
