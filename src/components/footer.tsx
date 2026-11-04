@@ -15,9 +15,8 @@ export function Footer() {
       <footer className="mt-20 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
         <div className="container-custom py-12 grid grid-cols-2 md:grid-cols-4 gap-8">
           <div className="col-span-2 md:col-span-1">
-            <Link href={`/${locale}`} className="flex items-center gap-2 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-display font-bold text-lg">A</div>
-              <span className="text-xl font-display font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Accins</span>
+            <Link href={/} className="flex items-center mb-4">
+              <img src="https://i.postimg.cc/xT20mRmS/888096303-5554517731440102-3460106477980446364-n.png" alt="Accins" className="h-10 w-auto object-contain" />
             </Link>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">{t('tagline')}</p>
             <div className="flex flex-col gap-1.5 text-xs text-slate-500 dark:text-slate-400">

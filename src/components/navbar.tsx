@@ -62,13 +62,8 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl">
       <nav className="container-custom h-16 flex items-center justify-between gap-2">
-        <Link href={`/${locale}`} className="flex items-center gap-2 shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-display font-bold text-lg shadow-lg shadow-indigo-500/30">
-            A
-          </div>
-          <span className="text-xl font-display font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-            Accins
-          </span>
+        <Link href={/} className="flex items-center shrink-0">
+          <img src="https://i.postimg.cc/xT20mRmS/888096303-5554517731440102-3460106477980446364-n.png" alt="Accins" className="h-10 md:h-12 w-auto object-contain" />
         </Link>
 
         <div className="hidden md:flex items-center gap-1">

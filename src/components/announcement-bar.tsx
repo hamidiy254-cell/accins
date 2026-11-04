@@ -9,34 +9,40 @@ export function AnnouncementBar() {
   if (!visible) return null;
 
   return (
-    <div className="relative bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-sm">
-      <div className="container-custom py-2 pr-10 flex items-center justify-center gap-3 md:gap-6 text-[11px] sm:text-xs md:text-sm font-medium flex-wrap">
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <Truck size={14} className="shrink-0" />
-          <span className="hidden sm:inline">
-            {t('delivery')}
-            <span className="mx-1.5 opacity-40">|</span>
-            <strong className="text-yellow-300">{t('free')}</strong>
-          </span>
-          <span className="sm:hidden"><strong className="text-yellow-300">{t('free')}</strong></span>
+    <div className="relative bg-slate-900 text-white border-b border-slate-800">
+      <div className="container-custom py-2.5 pr-10 flex items-center justify-center">
+        
+        {/* Version Desktop */}
+        <div className="hidden md:flex items-center gap-6 text-xs md:text-sm font-medium">
+          <div className="flex items-center gap-2">
+            <Truck size={15} className="text-indigo-400" />
+            <span>{t('delivery')} <span className="text-slate-500 mx-1">|</span> <strong className="text-green-400">{t('free')}</strong></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Banknote size={15} className="text-indigo-400" />
+            <span><strong>{t('cod')}</strong></span>
+          </div>
         </div>
-        <div className="hidden md:flex items-center gap-1.5 whitespace-nowrap">
-          <span className="opacity-40">|</span>
-          <Banknote size={14} className="shrink-0" />
-          <span><strong>{t('cod')}</strong></span>
+
+        {/* Version Mobile (Propre sur 2 lignes) */}
+        <div className="flex md:hidden flex-col items-center justify-center text-[11px] sm:text-xs gap-1 font-medium">
+          <div className="flex items-center gap-1.5">
+            <Truck size={13} className="text-indigo-400" />
+            <span>{t('delivery')} <span className="text-slate-500 mx-0.5">|</span> <strong className="text-green-400">{t('free')}</strong></span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Banknote size={13} className="text-indigo-400" />
+            <span><strong>{t('cod')}</strong></span>
+          </div>
         </div>
-        <div className="flex md:hidden items-center gap-1 whitespace-nowrap">
-          <span className="opacity-40">|</span>
-          <Banknote size={12} />
-          <span><strong>{t('cod')}</strong></span>
-        </div>
+
       </div>
       <button
         onClick={() => setVisible(false)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-white/20 rounded transition"
+        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-white/10 rounded-lg transition"
         aria-label={t('close')}
       >
-        <X size={14} />
+        <X size={16} />
       </button>
     </div>
   );

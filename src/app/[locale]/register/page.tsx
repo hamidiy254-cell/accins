@@ -34,7 +34,7 @@ export default function RegisterPage() {
       <BackButton href={`/${locale}`} label="Accueil" className="mb-6" />
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-xl">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-display font-bold text-2xl shadow-lg shadow-indigo-500/30">A</div>
+          <img src="https://i.postimg.cc/xT20mRmS/888096303-5554517731440102-3460106477980446364-n.png" alt="Accins" className="h-16 w-auto mx-auto mb-4 object-contain" />
           <h1 className="font-display text-2xl font-bold mb-1">Creer un compte</h1>
           <p className="text-sm text-slate-500">Rejoins Accins en 30 secondes</p>
         </div>
