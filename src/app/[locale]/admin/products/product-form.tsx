@@ -2,7 +2,8 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { Upload, Loader2, X, Globe } from 'lucide-react';
+import { Upload, Loader2, X, Globe, Sparkles } from 'lucide-react';
+import { translateProduct } from '@/app/actions/translate';
 
 export function ProductForm({ product }: { product?: any }) {
   const supabase = createClient();
@@ -31,6 +32,7 @@ export function ProductForm({ product }: { product?: any }) {
   
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [translating, setTranslating] = useState(false);
   const [error, setError] = useState('');
 
   const uploadImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,6 +55,41 @@ export function ProductForm({ product }: { product?: any }) {
 
   const removeImage = (index: number) => {
     setForm({ ...form, images: form.images.filter((_, i) => i !== index) });
+  };
+
+  const handleAutoTranslate = async () => {
+    if (!form.name.trim() && !form.description.trim()) {
+      alert("Veuillez d'abord remplir le nom ou la description en français.");
+      return;
+    }
+    
+    setTranslating(true);
+    try {
+      // Traduction en Anglais
+      const [nameEn, descEn] = await Promise.all([
+        form.name.trim() ? translateProduct(form.name, 'en') : Promise.resolve(''),
+        form.description.trim() ? translateProduct(form.description, 'en') : Promise.resolve(''),
+      ]);
+      
+      // Traduction en Arabe
+      const [nameAr, descAr] = await Promise.all([
+        form.name.trim() ? translateProduct(form.name, 'ar') : Promise.resolve(''),
+        form.description.trim() ? translateProduct(form.description, 'ar') : Promise.resolve(''),
+      ]);
+
+      setForm(prev => ({
+        ...prev,
+        name_en: nameEn,
+        description_en: descEn,
+        name_ar: nameAr,
+        description_ar: descAr,
+      }));
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors de la traduction. Vérifiez votre connexion et réessayez.");
+    } finally {
+      setTranslating(false);
+    }
   };
 
   const save = async (e: React.FormEvent) => {
@@ -127,48 +164,92 @@ export function ProductForm({ product }: { product?: any }) {
 
       {/* Traductions */}
       <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-5 bg-slate-50 dark:bg-slate-900/50 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-          <Globe size={18} /> Traductions (Optionnel)
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+            <Globe size={18} /> Traductions (Optionnel)
+          </h3>
+          <button
+            type="button"
+            onClick={handleAutoTranslate}
+            disabled={translating}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl text-sm font-semibold hover:from-indigo-700 hover:to-purple-700 transition disabled:opacity-50 shadow-sm"
+          >
+            {translating ? (
+              <><Loader2 size={16} className="animate-spin" /> Traduction en cours...</>
+            ) : (
+              <><Sparkles size={16} /> Traduire automatiquement</>
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">
+          Remplissez d'abord le nom et la description en français, puis cliquez sur "Traduire automatiquement" pour générer les versions anglaise et arabe.
+        </p>
         
         {/* FR */}
         <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2 mb-1"><span className="text-xs font-bold bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">FR</span> <span className="text-sm font-medium">Français (Par défaut)</span></div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-bold bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">FR</span> 
+            <span className="text-sm font-medium">Français (Par défaut)</span>
+          </div>
           <input required value={form.name} onChange={(e) => u('name', e.target.value)} placeholder="Nom du produit en français" className={inputClass} />
-          <textarea value={form.description} onChange={(e) => u('description', e.target.value)} placeholder="Description en français" rows={2} className={inputClass} />
+          <textarea value={form.description} onChange={(e) => u('description', e.target.value)} placeholder="Description en français" rows={3} className={inputClass} />
         </div>
 
         {/* EN */}
         <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2 mb-1"><span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">EN</span> <span className="text-sm font-medium">English</span></div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">EN</span> 
+            <span className="text-sm font-medium">English</span>
+          </div>
           <input value={form.name_en} onChange={(e) => u('name_en', e.target.value)} placeholder="Product name in English" className={inputClass} />
-          <textarea value={form.description_en} onChange={(e) => u('description_en', e.target.value)} placeholder="Description in English" rows={2} className={inputClass} />
+          <textarea value={form.description_en} onChange={(e) => u('description_en', e.target.value)} placeholder="Description in English" rows={3} className={inputClass} />
         </div>
 
         {/* AR */}
-        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-right" dir="rtl">
-          <div className="flex items-center gap-2 mb-1 justify-end"><span className="text-sm font-medium">العربية</span> <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">AR</span></div>
+        <div className="grid grid-cols-1 gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700" dir="rtl">
+          <div className="flex items-center gap-2 mb-1 justify-end">
+            <span className="text-sm font-medium">العربية</span> 
+            <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">AR</span>
+          </div>
           <input value={form.name_ar} onChange={(e) => u('name_ar', e.target.value)} placeholder="اسم المنتج بالعربية" className={inputClass} />
-          <textarea value={form.description_ar} onChange={(e) => u('description_ar', e.target.value)} placeholder="وصف بالعربية" rows={2} className={inputClass} />
+          <textarea value={form.description_ar} onChange={(e) => u('description_ar', e.target.value)} placeholder="وصف بالعربية" rows={3} className={inputClass} />
         </div>
       </div>
 
       {/* Images */}
       <div>
-        <label className="block text-sm font-medium mb-2">Images du produit</label>
+        <label className="block text-sm font-medium mb-2">Images du produit (Maximum 5 recommandé)</label>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           {form.images.map((img, idx) => (
             <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
               <img src={img} alt={`Image ${idx + 1}`} className="w-full h-full object-cover" />
-              {idx === 0 && <div className="absolute top-1 left-1 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">Principale</div>}
-              <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition shadow-lg"><X size={14} /></button>
+              {idx === 0 && (
+                <div className="absolute top-1 left-1 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">
+                  Principale
+                </div>
+              )}
+              <button 
+                type="button" 
+                onClick={() => removeImage(idx)} 
+                className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition shadow-lg"
+              >
+                <X size={14} />
+              </button>
             </div>
           ))}
           <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition">
-            {uploading ? <Loader2 size={24} className="animate-spin text-indigo-500" /> : <><Upload size={24} className="text-slate-400 mb-2" /><span className="text-xs text-slate-500 font-medium text-center px-2">Ajouter<br/>images</span></>}
+            {uploading ? (
+              <Loader2 size={24} className="animate-spin text-indigo-500" />
+            ) : (
+              <>
+                <Upload size={24} className="text-slate-400 mb-2" />
+                <span className="text-xs text-slate-500 font-medium text-center px-2">Ajouter<br/>images</span>
+              </>
+            )}
             <input type="file" accept="image/*" multiple onChange={uploadImages} disabled={uploading} className="hidden" />
           </label>
         </div>
+        <p className="text-xs text-slate-500">La première image sera utilisée dans la boutique.</p>
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer p-3 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
@@ -178,7 +259,10 @@ export function ProductForm({ product }: { product?: any }) {
 
       {error && <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 text-sm">{error}</div>}
 
-      <button disabled={saving} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
+      <button 
+        disabled={saving} 
+        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+      >
         {saving ? <><Loader2 size={18} className="animate-spin" /> Enregistrement...</> : 'Enregistrer le produit'}
       </button>
     </form>
