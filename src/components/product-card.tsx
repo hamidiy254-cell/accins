@@ -18,8 +18,8 @@ export function ProductCard({ product, locale }: { product: any; locale: string 
     <div className="group relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:shadow-2xl hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300 flex flex-col">
       <Link href={`/${locale}/products/${product.id}`} className="block">
         <div className="relative aspect-square bg-slate-100 dark:bg-slate-800 overflow-hidden">
-          {product.image_url ? (
-            <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+          { (product.images?.[0] || product.image_url) ? (
+            <img src={product.images?.[0] || product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">{t('noImage')}</div>
           )}

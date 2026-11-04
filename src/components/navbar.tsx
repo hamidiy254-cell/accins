@@ -57,10 +57,8 @@ export function Navbar() {
     router.refresh();
   };
 
-  const closeMobile = () => setMobileOpen(false);
-
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl">
+    <header className="sticky top-0 z-[100] border-b border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-950">
       <nav className="container-custom h-16 flex items-center justify-between gap-2">
         <Link href={`/${locale}`} className="flex items-center shrink-0">
           <img src="https://i.postimg.cc/xT20mRmS/888096303-5554517731440102-3460106477980446364-n.png" alt="Accins" className="h-10 md:h-12 w-auto object-contain" />
@@ -96,7 +94,7 @@ export function Navbar() {
                 </div>
               </button>
               {open && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50">
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden z-[110]">
                   <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                     <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Connecte</p>
                     <p className="text-sm font-semibold truncate">{user.email}</p>
@@ -141,34 +139,40 @@ export function Navbar() {
         </div>
       </nav>
 
+      {/* Mobile Menu - SOLIDE w PRO */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-[60] md:hidden">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeMobile} />
-          <div className="absolute right-0 top-0 h-full w-80 max-w-[88vw] bg-white dark:bg-slate-900 shadow-2xl flex flex-col">
+        <div className="fixed inset-0 z-[120] md:hidden">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-[300px] max-w-[85vw] bg-white dark:bg-slate-950 flex flex-col shadow-2xl border-l border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
               <span className="font-display font-bold text-lg">Menu</span>
-              <button onClick={closeMobile} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X size={20} /></button>
+              <button onClick={() => setMobileOpen(false)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                <X size={20} />
+              </button>
             </div>
+            
             {user && (
-              <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                 <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-1">Connecte</p>
                 <p className="text-sm font-semibold truncate">{user.email}</p>
               </div>
             )}
+
             <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-              <Link href={`/${locale}/products`} onClick={closeMobile} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
+              <Link href={`/${locale}/products`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
                 <Package size={18} className="text-indigo-600" /> {t('products')}
               </Link>
+              
               {user ? (
                 <>
-                  <Link href={`/${locale}/account`} onClick={closeMobile} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
+                  <Link href={`/${locale}/account`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
                     <UserCircle size={18} className="text-indigo-600" /> Mon compte
                   </Link>
-                  <Link href={`/${locale}/account#orders`} onClick={closeMobile} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
+                  <Link href={`/${locale}/account#orders`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
                     <ShoppingCart size={18} className="text-indigo-600" /> Mes commandes
                   </Link>
                   {role === 'admin' && (
-                    <Link href={`/${locale}/admin`} onClick={closeMobile} className="flex items-center gap-3 px-3 py-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 transition font-semibold">
+                    <Link href={`/${locale}/admin`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 transition font-semibold">
                       <ShieldCheck size={18} /> Admin panel
                     </Link>
                   )}
@@ -178,16 +182,17 @@ export function Navbar() {
                 </>
               ) : (
                 <>
-                  <Link href={`/${locale}/login`} onClick={closeMobile} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
+                  <Link href={`/${locale}/login`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
                     <User size={18} className="text-indigo-600" /> {t('login')}
                   </Link>
-                  <Link href={`/${locale}/register`} onClick={closeMobile} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
+                  <Link href={`/${locale}/register`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
                     <UserCircle size={18} className="text-indigo-600" /> Inscription
                   </Link>
                 </>
               )}
             </nav>
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50 dark:bg-slate-900">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Langue</span>
                 <LanguageSwitcher />
