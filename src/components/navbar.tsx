@@ -20,6 +20,7 @@ export function Navbar() {
   const [role, setRole] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [unreadPm, setUnreadPm] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,6 +28,14 @@ export function Navbar() {
     const loadProfile = async (uid: string) => {
       const { data } = await supabase.from('profiles').select('role').eq('id', uid).single();
       setRole(data?.role ?? null);
+      // Unread private messages count
+      const { count } = await supabase
+        .from('private_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', uid)
+        .neq('sender_id', uid)
+        .eq('is_read', false);
+      setUnreadPm(count || 0);
     };
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
@@ -35,10 +44,26 @@ export function Navbar() {
     const { data: sub } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null);
       if (session?.user) loadProfile(session.user.id);
-      else setRole(null);
+      else { setRole(null); setUnreadPm(0); }
     });
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // Refresh unread every 15s
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(async () => {
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('private_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .neq('sender_id', user.id)
+        .eq('is_read', false);
+      setUnreadPm(count || 0);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -68,7 +93,15 @@ export function Navbar() {
             {t('products')}
           </Link>
           <Link href={`/${locale}/game`} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5">
-            <Gamepad2 size={16} /> {t('game')}
+            <Gamepad2 size={16} /> Jeu
+          </Link>
+          <Link href={`/${locale}/chat`} className="relative px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-fuchsia-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5">
+            <MessageCircle size={16} /> Chat
+            {unreadPm > 0 && (
+              <span className="ml-1 bg-fuchsia-600 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                {unreadPm}
+              </span>
+            )}
           </Link>
         </div>
 
@@ -107,6 +140,10 @@ export function Navbar() {
                     </Link>
                     <Link href={`/${locale}/account#orders`} onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                       <Package size={16} /> Mes commandes
+                    </Link>
+                    <Link href={`/${locale}/chat`} onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                      <MessageCircle size={16} /> Chat
+                      {unreadPm > 0 && <span className="ml-auto bg-fuchsia-600 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{unreadPm}</span>}
                     </Link>
                     {role === 'admin' && (
                       <Link href={`/${locale}/admin`} onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition">
@@ -163,7 +200,11 @@ export function Navbar() {
                 <Package size={18} className="text-indigo-600" /> {t('products')}
               </Link>
               <Link href={`/${locale}/game`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
-                <Gamepad2 size={18} className="text-purple-600" /> {t('game')}
+                <Gamepad2 size={18} className="text-purple-600" /> Jeu
+              </Link>
+              <Link href={`/${locale}/chat`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
+                <MessageCircle size={18} className="text-fuchsia-600" /> Chat
+                {unreadPm > 0 && <span className="ml-auto bg-fuchsia-600 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">{unreadPm}</span>}
               </Link>
               
               {user ? (
