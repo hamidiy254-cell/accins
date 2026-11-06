@@ -25,7 +25,7 @@ export function ProductCard({ product, locale }: { product: any; locale: string 
       <Link href={`/${locale}/products/${product.id}`} className="block">
         <div className="relative aspect-square bg-slate-100 dark:bg-slate-800 overflow-hidden">
           {mainImage ? (
-            <img src={mainImage} alt={localizedName} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+            <img loading="lazy" decoding="async" src={mainImage} alt={localizedName} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">{t('noImage')}</div>
           )}

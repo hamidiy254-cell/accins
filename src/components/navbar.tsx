@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useCart } from '@/store/cart';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { ThemeToggle } from './theme-toggle';
-import { ShoppingCart, User, ShieldCheck, LogOut, UserCircle, Package, Menu, X } from 'lucide-react';
+import { ShoppingCart, User, ShieldCheck, LogOut, UserCircle, Package, Menu, X, Gamepad2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
@@ -66,6 +66,9 @@ export function Navbar() {
         <div className="hidden md:flex items-center gap-1">
           <Link href={`/${locale}/products`} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
             {t('products')}
+          </Link>
+          <Link href={`/${locale}/game`} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5">
+            <Gamepad2 size={16} /> {t('game')}
           </Link>
         </div>
 
@@ -158,6 +161,9 @@ export function Navbar() {
             <nav className="flex-1 overflow-y-auto p-3 space-y-1">
               <Link href={`/${locale}/products`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
                 <Package size={18} className="text-indigo-600" /> {t('products')}
+              </Link>
+              <Link href={`/${locale}/game`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium">
+                <Gamepad2 size={18} className="text-purple-600" /> {t('game')}
               </Link>
               
               {user ? (
