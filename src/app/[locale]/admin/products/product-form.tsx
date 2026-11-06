@@ -154,9 +154,21 @@ export function ProductForm({ product }: { product?: any }) {
 
       {error && <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 text-sm">{error}</div>}
 
-      <button disabled={saving} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
-        {saving ? <><Loader2 size={18} className="animate-spin" /> Enregistrement...</> : 'Enregistrer le produit'}
-      </button>
+      <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+        <button 
+          type="button" 
+          onClick={() => router.push('/fr/admin/products')}
+          className="w-full sm:w-1/3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 py-3.5 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+        >
+          Annuler
+        </button>
+        <button 
+          disabled={saving} 
+          className="w-full sm:w-2/3 bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+        >
+          {saving ? <><Loader2 size={18} className="animate-spin" /> Enregistrement...</> : 'Enregistrer le produit'}
+        </button>
+      </div>
     </form>
   );
 }
