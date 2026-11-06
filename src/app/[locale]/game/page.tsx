@@ -34,7 +34,7 @@ export default function GamePage() {
   const [saved, setSaved] = useState(false);
 
   const accumRef = useRef(0);
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | undefined>(undefined);
   const supabase = createClient();
 
   // Load user + best + leaderboard
