@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { BackButton } from '@/components/back-button';
 import { Mail, Lock, User, Phone, MapPin, Home, Loader2 } from 'lucide-react';
 
+const NAME_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s[A-Za-zÀ-ÖØ-öø-ÿ]+)*$/;
+
 export default function RegisterPage() {
   const [form, setForm] = useState({ full_name: '', phone: '', address: '', city: '', email: '', password: '' });
   const [error, setError] = useState('');
@@ -16,6 +18,10 @@ export default function RegisterPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!NAME_REGEX.test(form.full_name.trim())) {
+      setError('Le nom ne peut contenir que des lettres et des espaces.');
+      return;
+    }
     setLoading(true); setError('');
     const { error } = await supabase.auth.signUp({
       email: form.email, password: form.password,
@@ -43,7 +49,7 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium mb-1.5">Nom complet</label>
             <div className="relative">
               <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input required placeholder="Ahmed Alami" value={form.full_name} onChange={(e) => update('full_name', e.target.value)} className={inputClass} />
+              <input required placeholder="Ahmed Alami" value={form.full_name} pattern="[A-Za-zÀ-ÖØ-öø-ÿ\s]+" title="Lettres et espaces uniquement" onChange={(e) => update('full_name', e.target.value)} className={inputClass} />
             </div>
           </div>
           <div>

@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useCart } from '@/store/cart';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { ThemeToggle } from './theme-toggle';
-import { ShoppingCart, User, ShieldCheck, LogOut, UserCircle, Package, Menu, X, Gamepad2 } from 'lucide-react';
+import { ShoppingCart, User, ShieldCheck, LogOut, UserCircle, Package, Menu, X, Gamepad2, MessageCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
