@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Send, Loader2, ArrowLeft, MessageSquare } from 'lucide-react';
 import { VerifiedBadge } from '@/components/verified-badge';
 
+type Profile = { id: string; full_name: string | null; is_verified: boolean; role: string | null };
 type Message = {
   id: string;
   user_id: string;
@@ -13,7 +14,6 @@ type Message = {
   is_read: boolean;
   created_at: string;
 };
-
 type Conversation = {
   user_id: string;
   full_name: string;
@@ -23,36 +23,53 @@ type Conversation = {
   unread: number;
 };
 
-export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) {
+export function PrivateChat({ user, isAdmin, onRead }: { user: any; isAdmin: boolean; onRead?: () => void }) {
   const t = useTranslations('chat');
   const supabase = createClient();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
+  const [activeConvProfile, setActiveConvProfile] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load conversation list (admin) OR load own conversation (user)
   useEffect(() => {
     let alive = true;
     const load = async () => {
       setLoading(true);
       if (isAdmin) {
-        const { data } = await supabase
+        // Load all messages (sans jointure)
+        const { data, error } = await supabase
           .from('private_messages')
-          .select('*, profiles!private_messages_user_id_fkey(full_name, is_verified)')
+          .select('id, user_id, sender_id, content, is_read, created_at')
           .order('created_at', { ascending: false });
-
         if (!alive) return;
+        if (error) { console.error('PM load error:', error); setLoading(false); return; }
+
+        const msgs = data || [];
+        // Load unique profiles
+        const userIds = [...new Set(msgs.map((m: any) => m.user_id))];
+        let profsMap: Record<string, Profile> = {};
+        if (userIds.length > 0) {
+          const { data: profs } = await supabase
+            .from('profiles')
+            .select('id, full_name, is_verified, role')
+            .in('id', userIds);
+          if (profs) {
+            (profs as Profile[]).forEach(p => { profsMap[p.id] = p; });
+          }
+        }
+
         const map = new Map<string, Conversation>();
-        (data || []).forEach((m: any) => {
+        msgs.forEach((m: any) => {
           if (!map.has(m.user_id)) {
+            const prof = profsMap[m.user_id];
             map.set(m.user_id, {
               user_id: m.user_id,
-              full_name: m.profiles?.full_name || 'Utilisateur',
-              is_verified: m.profiles?.is_verified || false,
+              full_name: prof?.full_name || `User ${m.user_id.slice(0, 6)}`,
+              is_verified: prof?.is_verified || false,
               last_message: m.content,
               last_at: m.created_at,
               unread: 0,
@@ -71,7 +88,6 @@ export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) 
     return () => { alive = false; };
   }, [isAdmin, user.id]);
 
-  // Load messages of active conversation + realtime
   useEffect(() => {
     if (!activeConv) return;
     let alive = true;
@@ -79,20 +95,31 @@ export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) 
     const loadMessages = async () => {
       const { data } = await supabase
         .from('private_messages')
-        .select('*')
+        .select('id, user_id, sender_id, content, is_read, created_at')
         .eq('user_id', activeConv)
         .order('created_at', { ascending: true });
       if (!alive) return;
       setMessages(data || []);
+
+      // Load profile of the active conversation (for admin)
+      if (isAdmin) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('id, full_name, is_verified, role')
+          .eq('id', activeConv)
+          .single();
+        setActiveConvProfile(prof);
+      }
+
       requestAnimationFrame(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       });
-      // Mark as read for admin
-      if (isAdmin) {
-        const unreadIds = (data || []).filter((m: any) => m.sender_id === activeConv && !m.is_read).map((m: any) => m.id);
-        if (unreadIds.length > 0) {
-          await supabase.from('private_messages').update({ is_read: true }).in('id', unreadIds);
-        }
+
+      // Mark as read
+      const unreadIds = (data || []).filter((m: any) => m.sender_id !== user.id && !m.is_read).map((m: any) => m.id);
+      if (unreadIds.length > 0) {
+        await supabase.from('private_messages').update({ is_read: true }).in('id', unreadIds);
+        if (onRead) onRead();
       }
     };
     loadMessages();
@@ -103,15 +130,21 @@ export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) 
         { event: 'INSERT', schema: 'public', table: 'private_messages', filter: `user_id=eq.${activeConv}` },
         (payload: any) => {
           if (!alive) return;
-          setMessages(prev => prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
+          const newMsg = payload.new as Message;
+          setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
           requestAnimationFrame(() => {
             if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
           });
-        })
+          if (newMsg.sender_id !== user.id) {
+            supabase.from('private_messages').update({ is_read: true }).eq('id', newMsg.id);
+            if (onRead) onRead();
+          }
+        }
+      )
       .subscribe();
 
     return () => { alive = false; supabase.removeChannel(channel); };
-  }, [activeConv, isAdmin]);
+  }, [activeConv]);
 
   const send = async () => {
     const text = input.trim();
@@ -124,7 +157,7 @@ export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) 
       content: text,
     });
     setSending(false);
-    if (error) { setInput(text); alert(t('sendError')); }
+    if (error) { setInput(text); alert(t('sendError') + ': ' + error.message); }
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -143,7 +176,7 @@ export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) 
     return <div className="flex items-center justify-center py-16"><Loader2 className="animate-spin text-fuchsia-600" size={28} /></div>;
   }
 
-  // ============ ADMIN : list of conversations OR conversation view ============
+  // ADMIN : liste des conversations
   if (isAdmin && !activeConv) {
     if (conversations.length === 0) {
       return <div className="p-8 text-center text-sm text-slate-500">{t('noConversations')}</div>;
@@ -175,12 +208,12 @@ export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) 
     );
   }
 
-  // ============ CONVERSATION VIEW (user or admin replying) ============
+  // CONVERSATION
   return (
     <div className="flex flex-col h-[65vh] min-h-[400px]">
       {isAdmin && (
         <button
-          onClick={() => { setActiveConv(null); setMessages([]); }}
+          onClick={() => { setActiveConv(null); setMessages([]); setActiveConvProfile(null); }}
           className="flex items-center gap-2 px-4 py-2 border-b border-slate-200 dark:border-slate-800 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-fuchsia-600 transition bg-slate-50 dark:bg-slate-900"
         >
           <ArrowLeft size={16} /> {t('backToList')}
@@ -192,6 +225,16 @@ export function PrivateChat({ user, isAdmin }: { user: any; isAdmin: boolean }) 
           <MessageSquare size={16} className="text-fuchsia-600" />
           <p className="text-sm font-semibold">{t('supportChat')}</p>
           <span className="text-xs text-slate-500">— {t('supportChatSub')}</span>
+        </div>
+      )}
+
+      {isAdmin && activeConvProfile && (
+        <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-fuchsia-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
+            {(activeConvProfile.full_name || 'U').charAt(0).toUpperCase()}
+          </div>
+          <p className="text-sm font-semibold">{activeConvProfile.full_name || 'Utilisateur'}</p>
+          {activeConvProfile.is_verified && <VerifiedBadge size={14} />}
         </div>
       )}
 

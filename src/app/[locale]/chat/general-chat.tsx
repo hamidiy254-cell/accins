@@ -2,26 +2,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useTranslations } from 'next-intl';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, Users } from 'lucide-react';
 import { VerifiedBadge } from '@/components/verified-badge';
 
+type Profile = { id: string; full_name: string | null; is_verified: boolean; role: string | null };
 type Message = {
   id: string;
   user_id: string;
   content: string;
   created_at: string;
-  profiles?: { full_name: string | null; is_verified: boolean; role: string | null } | null;
+  profiles?: Profile | null;
 };
 
 export function GeneralChat({ user }: { user: any }) {
   const t = useTranslations('chat');
   const supabase = createClient();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [profilesMap, setProfilesMap] = useState<Record<string, Profile>>({});
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const profilesMapRef = useRef<Record<string, Profile>>({});
 
   const scrollBottom = () => {
     requestAnimationFrame(() => {
@@ -29,35 +32,80 @@ export function GeneralChat({ user }: { user: any }) {
     });
   };
 
+  const fetchProfiles = async (ids: string[]) => {
+    const unique = [...new Set(ids)].filter(id => !profilesMapRef.current[id]);
+    if (unique.length === 0) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, is_verified, role')
+      .in('id', unique);
+    if (data) {
+      const newMap = { ...profilesMapRef.current };
+      (data as Profile[]).forEach(p => { newMap[p.id] = p; });
+      profilesMapRef.current = newMap;
+      setProfilesMap(newMap);
+    }
+  };
+
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const { data } = await supabase
+
+    const loadInitial = async () => {
+      // 1. Load messages (SANS jointure)
+      const { data, error } = await supabase
         .from('chat_messages')
-        .select('*, profiles!chat_messages_user_id_fkey(full_name, is_verified, role)')
-        .order('created_at', { ascending: true })
-        .limit(200);
+        .select('id, user_id, content, created_at')
+        .order('created_at', { ascending: false })
+        .limit(300);
+
       if (!alive) return;
-      setMessages(data || []);
+      if (error) {
+        console.error('Chat load error:', error);
+        setLoading(false);
+        return;
+      }
+
+      const msgs = (data || []).slice().reverse();
+
+      // 2. Load profiles séparément
+      const userIds = [...new Set(msgs.map((m: any) => m.user_id))];
+      if (userIds.length > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, full_name, is_verified, role')
+          .in('id', userIds);
+
+        if (profs) {
+          const map: Record<string, Profile> = {};
+          (profs as Profile[]).forEach(p => { map[p.id] = p; });
+          profilesMapRef.current = map;
+          setProfilesMap(map);
+        }
+      }
+
+      setMessages(msgs);
       setLoading(false);
       scrollBottom();
-    })();
+    };
+    loadInitial();
 
+    // Realtime
     const channel = supabase
       .channel('chat_messages_channel')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, async (payload: any) => {
-        const { data } = await supabase
-          .from('chat_messages')
-          .select('*, profiles!chat_messages_user_id_fkey(full_name, is_verified, role)')
-          .eq('id', payload.new.id)
-          .single();
-        if (data && alive) {
-          setMessages(prev => {
-            if (prev.some(m => m.id === data.id)) return prev;
-            return [...prev, data];
-          });
-          scrollBottom();
+        const newMsg = payload.new as Message;
+        if (!alive) return;
+
+        // Fetch profile if not in cache
+        if (!profilesMapRef.current[newMsg.user_id]) {
+          await fetchProfiles([newMsg.user_id]);
         }
+
+        setMessages(prev => {
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+        scrollBottom();
       })
       .subscribe();
 
@@ -73,7 +121,7 @@ export function GeneralChat({ user }: { user: any }) {
     setSending(false);
     if (error) {
       setInput(text);
-      alert(t('sendError'));
+      alert(t('sendError') + ': ' + error.message);
       return;
     }
     inputRef.current?.focus();
@@ -85,8 +133,7 @@ export function GeneralChat({ user }: { user: any }) {
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
-    const now = new Date();
-    const sameDay = d.toDateString() === now.toDateString();
+    const sameDay = d.toDateString() === new Date().toDateString();
     return sameDay
       ? d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
       : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -98,22 +145,33 @@ export function GeneralChat({ user }: { user: any }) {
 
   return (
     <div className="flex flex-col h-[65vh] min-h-[400px]">
+      <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-1.5 text-slate-500">
+          <Users size={14} className="text-fuchsia-600" />
+          <span className="font-medium">{t('generalChat')}</span>
+        </div>
+        <span className="text-slate-400">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
+      </div>
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 ? (
           <p className="text-center text-sm text-slate-500 py-8">{t('noMessages')}</p>
         ) : messages.map(m => {
+          const profile = profilesMap[m.user_id] || m.profiles;
           const isOwn = m.user_id === user.id;
-          const isAdminMsg = m.profiles?.role === 'admin';
+          const isAdminMsg = profile?.role === 'admin';
+          const displayName = profile?.full_name || m.user_id.slice(0, 8);
           return (
             <div key={m.id} className={`flex gap-2 ${isOwn ? 'flex-row-reverse' : ''}`}>
               <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold text-white ${isAdminMsg ? 'bg-gradient-to-br from-amber-500 to-orange-600' : 'bg-gradient-to-br from-fuchsia-500 to-purple-600'}`}>
-                {(m.profiles?.full_name || '?').charAt(0).toUpperCase()}
+                {displayName.charAt(0).toUpperCase()}
               </div>
               <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
                 <div className={`flex items-center gap-1.5 mb-1 text-xs ${isOwn ? 'flex-row-reverse' : ''}`}>
                   <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                    {m.profiles?.full_name || t('anonymous')}
-                    {m.profiles?.is_verified && <VerifiedBadge size={12} />}
+                    {displayName}
+                    {profile?.is_verified && <VerifiedBadge size={12} />}
+                    {isAdminMsg && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase">Admin</span>}
                   </span>
                   <span className="text-slate-400">{formatTime(m.created_at)}</span>
                 </div>
@@ -145,7 +203,6 @@ export function GeneralChat({ user }: { user: any }) {
           onClick={send}
           disabled={!input.trim() || sending}
           className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white p-2.5 rounded-xl disabled:opacity-40 transition shrink-0"
-          aria-label="Envoyer"
         >
           {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
         </button>
