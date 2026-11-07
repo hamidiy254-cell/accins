@@ -487,7 +487,7 @@ export default function PenaltyPage() {
 
   return (
     <div className="container-custom py-6 md:py-10 max-w-5xl">
-      <Link href={`/${locale}`} className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-emerald-600 mb-6 transition">
+      <Link href={`/${locale}/game`} className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-emerald-600 mb-6 transition">
         <ArrowLeft size={16} /> {t('back')}
       </Link>
 
