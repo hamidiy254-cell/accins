@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { Trophy, RotateCcw, Play, ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, Crown, Pause, Gamepad2, Award, Flame } from 'lucide-react';
+import { Trophy, RotateCcw, Play, ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, Crown, Pause, Gamepad2, Award, Flame, Target } from 'lucide-react';
 
 const GRID = 22;
 const TICK_BASE = 155;
@@ -13,9 +13,7 @@ const COMBO_WINDOW = 2200;
 type Segment = { x: number; y: number };
 type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color: string; };
 type ScorePopup = { x: number; y: number; text: string; life: number; maxLife: number; color: string; };
-type Trail = { x: number; y: number; life: number; maxLife: number; };
 type Firefly = { x: number; y: number; phase: number; vx: number; vy: number; };
-type Dust = { x: number; y: number; vx: number; vy: number; size: number; };
 
 export default function GamePage() {
   const t = useTranslations('game');
@@ -26,7 +24,8 @@ export default function GamePage() {
   const accumRef = useRef(0);
   const lastRef = useRef(0);
   const firefliesRef = useRef<Firefly[]>([]);
-  const dustRef = useRef<Dust[]>([]);
+  const isMobileRef = useRef(false);
+  const bgCacheRef = useRef<HTMLCanvasElement | null>(null);
 
   const stateRef = useRef({
     snake: [{ x: 11, y: 11 }] as Segment[],
@@ -44,7 +43,6 @@ export default function GamePage() {
     tickProgress: 0,
     particles: [] as Particle[],
     popups: [] as ScorePopup[],
-    trails: [] as Trail[],
     shake: 0,
     flash: 0,
     flashColor: '255,255,255',
@@ -58,17 +56,12 @@ export default function GamePage() {
   const supabase = createClient();
 
   useEffect(() => {
-    firefliesRef.current = Array.from({ length: 12 }, () => ({
+    isMobileRef.current = /Mobi|Android/i.test(navigator.userAgent);
+    firefliesRef.current = Array.from({ length: 8 }, () => ({
       x: Math.random(), y: Math.random(),
       phase: Math.random() * Math.PI * 2,
-      vx: (Math.random() - 0.5) * 0.0004,
-      vy: (Math.random() - 0.5) * 0.0004,
-    }));
-    dustRef.current = Array.from({ length: 50 }, () => ({
-      x: Math.random(), y: Math.random(),
-      vx: (Math.random() - 0.5) * 0.0002,
-      vy: (Math.random() - 0.5) * 0.0002,
-      size: 0.5 + Math.random() * 1.2,
+      vx: (Math.random() - 0.5) * 0.0003,
+      vy: (Math.random() - 0.5) * 0.0003,
     }));
   }, []);
 
@@ -83,17 +76,44 @@ export default function GamePage() {
     })();
   }, []);
 
+  const buildBgCache = (size: number) => {
+    const cache = document.createElement('canvas');
+    const dpr = isMobileRef.current ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+    cache.width = size * dpr;
+    cache.height = size * dpr;
+    const c = cache.getContext('2d')!;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const bg = c.createRadialGradient(size * 0.3, size * 0.3, 0, size / 2, size / 2, size);
+    bg.addColorStop(0, '#0f3831');
+    bg.addColorStop(0.4, '#0a2a2a');
+    bg.addColorStop(0.7, '#061a1e');
+    bg.addColorStop(1, '#020617');
+    c.fillStyle = bg;
+    c.fillRect(0, 0, size, size);
+
+    const cell = size / GRID;
+    c.strokeStyle = 'rgba(34, 211, 238, 0.05)';
+    c.lineWidth = 1;
+    for (let i = 0; i <= GRID; i++) {
+      c.beginPath(); c.moveTo(i * cell, 0); c.lineTo(i * cell, size); c.stroke();
+      c.beginPath(); c.moveTo(0, i * cell); c.lineTo(size, i * cell); c.stroke();
+    }
+    bgCacheRef.current = cache;
+  };
+
   useEffect(() => {
     const resize = () => {
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (!canvas || !container) return;
       const size = container.clientWidth;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = isMobileRef.current ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = size * dpr;
       canvas.height = size * dpr;
       canvas.style.width = size + 'px';
       canvas.style.height = size + 'px';
+      buildBgCache(size);
     };
     resize();
     window.addEventListener('resize', resize);
@@ -110,20 +130,18 @@ export default function GamePage() {
 
   const spawnParticles = (cx: number, cy: number, count: number, color: string) => {
     const s = stateRef.current;
+    const cap = isMobileRef.current ? 30 : 50;
+    if (s.particles.length > cap) return;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 1.5 + Math.random() * 4;
       s.particles.push({
         x: cx, y: cy,
         vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-        life: 30 + Math.random() * 30, maxLife: 60,
-        size: 1.5 + Math.random() * 3, color,
+        life: 25 + Math.random() * 25, maxLife: 50,
+        size: 1.5 + Math.random() * 2.5, color,
       });
     }
-  };
-
-  const addPopup = (x: number, y: number, text: string, color: string) => {
-    stateRef.current.popups.push({ x, y, text, life: 55, maxLife: 55, color });
   };
 
   const step = () => {
@@ -131,99 +149,43 @@ export default function GamePage() {
     s.dir = s.nextDir;
     let head = { x: s.snake[0].x + s.dir.x, y: s.snake[0].y + s.dir.y };
     let wrapped = false;
-
     if (head.x < 0) { head.x = GRID - 1; wrapped = true; }
     else if (head.x >= GRID) { head.x = 0; wrapped = true; }
     if (head.y < 0) { head.y = GRID - 1; wrapped = true; }
     else if (head.y >= GRID) { head.y = 0; wrapped = true; }
 
-    const bodyToCheck = s.snake.slice(0, -1);
-    if (bodyToCheck.some(p => p.x === head.x && p.y === head.y)) return endGame();
+    if (s.snake.slice(0, -1).some(p => p.x === head.x && p.y === head.y)) return endGame();
 
     s.snake.unshift(head);
 
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const size = canvas.width / dpr;
-      const cell = size / GRID;
-      s.trails.push({
-        x: s.snake[0].x * cell + cell / 2,
-        y: s.snake[0].y * cell + cell / 2,
-        life: 12, maxLife: 12,
-      });
-    }
-
     if (head.x === s.food.x && head.y === s.food.y) {
       const now = performance.now();
-      if (now - s.lastEatAt < COMBO_WINDOW) {
-        s.combo = Math.min(s.combo + 1, 9);
-      } else {
-        s.combo = 1;
-      }
+      s.combo = now - s.lastEatAt < COMBO_WINDOW ? Math.min(s.combo + 1, 9) : 1;
       s.lastEatAt = now;
       const gained = 10 * s.combo;
       s.score += gained;
       s.tick = Math.max(TICK_MIN, s.tick - 2.5);
       s.shake = 3;
       s.flash = 0.3;
-      s.flashColor = '255,255,255';
 
-      const canvas2 = canvasRef.current!;
-      const dpr2 = Math.min(window.devicePixelRatio || 1, 2);
-      const size2 = canvas2.width / dpr2;
-      const cell2 = size2 / GRID;
-      const fx = s.food.x * cell2 + cell2 / 2;
-      const fy = s.food.y * cell2 + cell2 / 2;
-
-      spawnParticles(fx, fy, 16, 'hsl(0, 90%, 60%)');
-      spawnParticles(fx, fy, 8, 'hsl(45, 100%, 60%)');
-
-      if (s.combo > 1) {
-        addPopup(fx, fy, `+${gained} x${s.combo}`, '#fbbf24');
-      } else {
-        addPopup(fx, fy, `+${gained}`, '#fbbf24');
-      }
+      const canvas = canvasRef.current!;
+      const dpr = isMobileRef.current ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+      const size = canvas.width / dpr;
+      const cell = size / GRID;
+      spawnParticles(s.food.x * cell + cell / 2, s.food.y * cell + cell / 2, 12, '#f43f5e');
+      s.popups.push({ x: s.food.x * cell + cell / 2, y: s.food.y * cell + cell / 2, text: `+${gained}${s.combo > 1 ? ' x' + s.combo : ''}`, life: 50, maxLife: 50, color: '#fbbf24' });
 
       s.food = randomFood();
       setUi(p => ({ ...p, score: s.score, combo: s.combo }));
     } else {
       s.snake.pop();
     }
-
     s.justWrapped = wrapped;
   };
 
   const endGame = () => {
     const s = stateRef.current;
-    s.running = false;
-    s.gameOver = true;
-    s.shake = 18;
-    s.flash = 0.7;
-    s.flashColor = '239,68,68';
-
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const size = canvas.width / dpr;
-      const cell = size / GRID;
-      s.snake.forEach((seg, i) => {
-        const hue = 180 + (i / s.snake.length) * 120;
-        for (let p = 0; p < 2; p++) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = 2 + Math.random() * 5;
-          s.particles.push({
-            x: seg.x * cell + cell / 2,
-            y: seg.y * cell + cell / 2,
-            vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-            life: 40 + Math.random() * 40, maxLife: 80,
-            size: 2 + Math.random() * 3,
-            color: `hsl(${hue}, 90%, 60%)`,
-          });
-        }
-      });
-    }
-
+    s.running = false; s.gameOver = true; s.shake = 14; s.flash = 0.6; s.flashColor = '239,68,68';
     const isBest = s.score > ui.best;
     const best = isBest ? s.score : ui.best;
     if (isBest) localStorage.setItem('snake_best', String(best));
@@ -240,25 +202,12 @@ export default function GamePage() {
 
   const start = () => {
     const s = stateRef.current;
-    s.snake = [{ x: 11, y: 11 }];
-    s.prevSnake = [{ x: 11, y: 11 }];
-    s.dir = { x: 1, y: 0 };
-    s.nextDir = { x: 1, y: 0 };
-    s.food = randomFood();
-    s.score = 0;
-    s.combo = 1;
-    s.lastEatAt = 0;
-    s.tick = TICK_BASE;
-    s.tickProgress = 0;
-    s.particles = [];
-    s.popups = [];
-    s.trails = [];
-    s.shake = 0;
-    s.flash = 0;
-    s.running = true;
-    s.gameOver = false;
-    s.paused = false;
-    s.justWrapped = false;
+    s.snake = [{ x: 11, y: 11 }]; s.prevSnake = [{ x: 11, y: 11 }];
+    s.dir = { x: 1, y: 0 }; s.nextDir = { x: 1, y: 0 };
+    s.food = randomFood(); s.score = 0; s.combo = 1; s.lastEatAt = 0;
+    s.tick = TICK_BASE; s.tickProgress = 0;
+    s.particles = []; s.popups = []; s.shake = 0; s.flash = 0;
+    s.running = true; s.gameOver = false; s.paused = false; s.justWrapped = false;
     accumRef.current = 0;
     setUi(p => ({ ...p, score: 0, combo: 1, running: true, gameOver: false, paused: false, newRecord: false }));
     setSaved(false);
@@ -271,92 +220,51 @@ export default function GamePage() {
     setUi(p => ({ ...p, paused: s.paused }));
   };
 
-  const drawBackground = (ctx: CanvasRenderingContext2D, size: number, time: number) => {
-    const bg = ctx.createRadialGradient(size * 0.3, size * 0.3, 0, size / 2, size / 2, size);
-    bg.addColorStop(0, '#0f3831');
-    bg.addColorStop(0.4, '#0a2a2a');
-    bg.addColorStop(0.7, '#061a1e');
-    bg.addColorStop(1, '#020617');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, size, size);
-
+  const render = (time: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return;
+    const dpr = isMobileRef.current ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+    const size = canvas.width / dpr;
     const cell = size / GRID;
-    const pulse = 0.04 + 0.02 * Math.sin(time / 1000);
-    ctx.strokeStyle = `rgba(34, 211, 238, ${pulse})`;
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= GRID; i++) {
-      ctx.beginPath(); ctx.moveTo(i * cell, 0); ctx.lineTo(i * cell, size); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, i * cell); ctx.lineTo(size, i * cell); ctx.stroke();
+    const s = stateRef.current;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (s.shake > 0.1) {
+      ctx.translate((Math.random() - 0.5) * s.shake, (Math.random() - 0.5) * s.shake);
+      s.shake *= 0.85;
     }
 
-    dustRef.current.forEach(d => {
-      d.x += d.vx; d.y += d.vy;
-      if (d.x < 0) d.x = 1;
-      if (d.x > 1) d.x = 0;
-      if (d.y < 0) d.y = 1;
-      if (d.y > 1) d.y = 0;
-      ctx.fillStyle = `rgba(148, 233, 255, ${0.15 + 0.2 * Math.sin(time / 800 + d.x * 10)})`;
-      ctx.beginPath();
-      ctx.arc(d.x * size, d.y * size, d.size, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    if (bgCacheRef.current) ctx.drawImage(bgCacheRef.current, 0, 0, size, size);
+    else { ctx.fillStyle = '#0a2a2a'; ctx.fillRect(0, 0, size, size); }
 
-    firefliesRef.current.forEach(f => {
+    // Fireflies (réduits sur mobile)
+    const ffCount = isMobileRef.current ? 4 : 8;
+    for (let i = 0; i < Math.min(ffCount, firefliesRef.current.length); i++) {
+      const f = firefliesRef.current[i];
       f.x += f.vx; f.y += f.vy;
       if (f.x < 0.02 || f.x > 0.98) f.vx *= -1;
       if (f.y < 0.02 || f.y > 0.98) f.vy *= -1;
-      const fx = f.x * size;
-      const fy = f.y * size;
       const fp = 0.4 + 0.6 * Math.abs(Math.sin(time / 500 + f.phase));
-      const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, 14);
-      grad.addColorStop(0, `rgba(253, 224, 71, ${0.6 * fp})`);
-      grad.addColorStop(0.5, `rgba(253, 224, 71, ${0.15 * fp})`);
-      grad.addColorStop(1, 'rgba(253, 224, 71, 0)');
-      ctx.fillStyle = grad;
+      const fx = f.x * size, fy = f.y * size;
+      ctx.fillStyle = `rgba(253, 224, 71, ${fp * 0.7})`;
       ctx.beginPath();
-      ctx.arc(fx, fy, 14, 0, Math.PI * 2);
+      ctx.arc(fx, fy, 2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(255, 240, 150, ${fp})`;
-      ctx.beginPath();
-      ctx.arc(fx, fy, 1.8, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  };
+    }
 
-  const drawTrails = (ctx: CanvasRenderingContext2D) => {
-    const s = stateRef.current;
-    s.trails = s.trails.filter(t => {
-      t.life--;
-      if (t.life <= 0) return false;
-      const alpha = (t.life / t.maxLife) * 0.25;
-      ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 6 * (t.life / t.maxLife), 0, Math.PI * 2);
-      ctx.fill();
-      return true;
-    });
-  };
-
-  const drawFood = (ctx: CanvasRenderingContext2D, food: Segment, cell: number, time: number) => {
-    const cx = food.x * cell + cell / 2;
-    const cy = food.y * cell + cell / 2;
+    // Food
+    const cx = s.food.x * cell + cell / 2;
+    const cy = s.food.y * cell + cell / 2;
     const pulse = 1 + Math.sin(time / 250) * 0.08;
     const r = cell * 0.4 * pulse;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + r * 0.75, r * 0.8, r * 0.25, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.save();
-    ctx.shadowBlur = 35;
-    ctx.shadowColor = '#ef4444';
-    ctx.fillStyle = '#dc2626';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
+    if (!isMobileRef.current) {
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = '#ef4444';
+    }
     const grad = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.05, cx, cy, r);
     grad.addColorStop(0, '#fecaca');
     grad.addColorStop(0.4, '#f87171');
@@ -366,254 +274,110 @@ export default function GamePage() {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowBlur = 0;
 
-    const shine = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, 0, cx - r * 0.35, cy - r * 0.4, r * 0.5);
-    shine.addColorStop(0, 'rgba(255,255,255,0.9)');
-    shine.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shine;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
     ctx.beginPath();
-    ctx.arc(cx - r * 0.35, cy - r * 0.4, r * 0.5, 0, Math.PI * 2);
+    ctx.arc(cx - r * 0.35, cy - r * 0.4, r * 0.25, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - r * 0.85);
-    ctx.quadraticCurveTo(cx + r * 0.1, cy - r * 1.05, cx + r * 0.2, cy - r * 1.2);
-    ctx.stroke();
-
-    ctx.save();
-    ctx.translate(cx + r * 0.15, cy - r);
-    ctx.rotate(-Math.PI / 4);
-    const leafGrad = ctx.createLinearGradient(0, 0, r * 0.6, 0);
-    leafGrad.addColorStop(0, '#4ade80');
-    leafGrad.addColorStop(1, '#15803d');
-    ctx.fillStyle = leafGrad;
-    ctx.beginPath();
-    ctx.ellipse(r * 0.25, 0, r * 0.35, r * 0.13, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    for (let i = 0; i < 3; i++) {
-      const a = time / 400 + i * Math.PI * 2 / 3;
-      const sr = r * 1.5;
-      const sx = cx + Math.cos(a) * sr;
-      const sy = cy + Math.sin(a) * sr * 0.7;
-      const sp = 0.5 + 0.5 * Math.sin(time / 150 + i * 2);
-      ctx.fillStyle = `rgba(255, 240, 150, ${sp * 0.7})`;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  };
-
-  const drawHead = (ctx: CanvasRenderingContext2D, pos: { x: number; y: number }, dir: { x: number; y: number }, cell: number, time: number) => {
-    const angle = Math.atan2(dir.y, dir.x);
-    const hs = cell * 0.55;
-
-    ctx.save();
-    ctx.translate(pos.x, pos.y);
-    ctx.rotate(angle);
-
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath();
-    ctx.ellipse(2, 4, hs * 1.1, hs * 0.9, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.save();
-    ctx.shadowBlur = 30;
-    ctx.shadowColor = '#22d3ee';
-    const headGrad = ctx.createRadialGradient(-hs * 0.3, -hs * 0.3, 0, 0, 0, hs * 1.2);
-    headGrad.addColorStop(0, '#67e8f9');
-    headGrad.addColorStop(0.5, '#22d3ee');
-    headGrad.addColorStop(1, '#0891b2');
-    ctx.fillStyle = headGrad;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, hs * 1.15, hs * 1.0, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    const shine = ctx.createRadialGradient(-hs * 0.4, -hs * 0.4, 0, 0, 0, hs);
-    shine.addColorStop(0, 'rgba(255,255,255,0.7)');
-    shine.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shine;
-    ctx.beginPath();
-    ctx.ellipse(-hs * 0.15, -hs * 0.15, hs * 0.6, hs * 0.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const ex = hs * 0.35;
-    const ey = hs * 0.55;
-    const er = hs * 0.3;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(ex, -ey, er, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath(); ctx.arc(ex + er * 0.35, -ey, er * 0.55, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex + er * 0.35, ey, er * 0.55, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.beginPath(); ctx.arc(ex + er * 0.5, -ey - er * 0.25, er * 0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex + er * 0.5, ey - er * 0.25, er * 0.2, 0, Math.PI * 2); ctx.fill();
-
-    const flickCycle = time % 1800;
-    if (flickCycle < 300) {
-      const flick = Math.sin(flickCycle / 300 * Math.PI);
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = Math.max(1.5, cell * 0.055);
-      ctx.lineCap = 'round';
-      const tl = hs * 0.6 * flick;
-      ctx.beginPath();
-      ctx.moveTo(hs * 1.05, 0);
-      ctx.lineTo(hs * 1.05 + tl, 0);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(hs * 1.05 + tl, 0);
-      ctx.lineTo(hs * 1.05 + tl * 1.2, -hs * 0.12);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(hs * 1.05 + tl, 0);
-      ctx.lineTo(hs * 1.05 + tl * 1.2, hs * 0.12);
-      ctx.stroke();
-    }
-
-    ctx.restore();
-  };
-
-  const drawSnake = (ctx: CanvasRenderingContext2D, cell: number, time: number) => {
-    const s = stateRef.current;
-    if (s.snake.length === 0) return;
-
-    const points: { x: number; y: number }[] = [];
-    for (let i = 0; i < s.snake.length; i++) {
-      const curr = s.snake[i];
-      const prev = s.prevSnake[i] || curr;
-      let px, py;
-      if (i === 0 && s.justWrapped) {
-        px = curr.x * cell + cell / 2;
-        py = curr.y * cell + cell / 2;
-      } else {
-        px = (prev.x + (curr.x - prev.x) * s.tickProgress) * cell + cell / 2;
-        py = (prev.y + (curr.y - prev.y) * s.tickProgress) * cell + cell / 2;
+    // Snake
+    if (s.snake.length > 0) {
+      const pts: { x: number; y: number }[] = [];
+      for (let i = 0; i < s.snake.length; i++) {
+        const c = s.snake[i];
+        const p = s.prevSnake[i] || c;
+        if (i === 0 && s.justWrapped) {
+          pts.push({ x: c.x * cell + cell / 2, y: c.y * cell + cell / 2 });
+        } else {
+          pts.push({ x: (p.x + (c.x - p.x) * s.tickProgress) * cell + cell / 2, y: (p.y + (c.y - p.y) * s.tickProgress) * cell + cell / 2 });
+        }
       }
-      points.push({ x: px, y: py });
-    }
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    points.forEach((p, i) => {
-      if (i === 0) return;
-      const t = i / points.length;
-      const radius = cell * (0.35 - 0.15 * t);
-      ctx.beginPath();
-      ctx.arc(p.x + 2, p.y + 3, radius, 0, Math.PI * 2);
-      ctx.fill();
-    });
+      for (let i = pts.length - 1; i >= 1; i--) {
+        const t = i / pts.length;
+        const radius = cell * (0.44 - 0.24 * t);
+        const hue = 190 + t * 110;
+        const sat = 95 - t * 20;
+        const lig = 60 - t * 22;
+        ctx.fillStyle = `hsl(${hue}, ${sat}%, ${lig}%)`;
+        ctx.beginPath();
+        ctx.arc(pts[i].x, pts[i].y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-    for (let i = points.length - 1; i >= 1; i--) {
-      const t = i / points.length;
-      const radius = cell * (0.44 - 0.24 * t);
-      const hue = 190 + t * 110;
-      const sat = 95 - t * 20;
-      const lig = 60 - t * 22;
-
+      // Head (simplifié pour perf)
+      const head = pts[0];
+      const hs = cell * 0.55;
+      const angle = Math.atan2(s.dir.y, s.dir.x);
       ctx.save();
-      ctx.shadowBlur = i < 4 ? 22 : 12;
-      ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
-      ctx.fillStyle = `hsl(${hue}, ${sat}%, ${lig}%)`;
+      ctx.translate(head.x, head.y);
+      ctx.rotate(angle);
+
+      if (!isMobileRef.current) { ctx.shadowBlur = 15; ctx.shadowColor = '#22d3ee'; }
+      const hg = ctx.createRadialGradient(-hs * 0.3, -hs * 0.3, 0, 0, 0, hs);
+      hg.addColorStop(0, '#67e8f9');
+      hg.addColorStop(0.6, '#22d3ee');
+      hg.addColorStop(1, '#0891b2');
+      ctx.fillStyle = hg;
       ctx.beginPath();
-      ctx.arc(points[i].x, points[i].y, radius, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, hs * 1.1, hs, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Eyes
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(hs * 0.35, -hs * 0.55, hs * 0.28, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(hs * 0.35, hs * 0.55, hs * 0.28, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath(); ctx.arc(hs * 0.45, -hs * 0.55, hs * 0.15, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(hs * 0.45, hs * 0.55, hs * 0.15, 0, Math.PI * 2); ctx.fill();
+
+      // Tongue
+      if (time % 1500 < 250) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = Math.max(1.5, cell * 0.05);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(hs * 1.05, 0);
+        ctx.lineTo(hs * 1.5, 0);
+        ctx.stroke();
+      }
       ctx.restore();
-
-      ctx.fillStyle = `hsla(${hue}, 100%, 85%, 0.35)`;
-      ctx.beginPath();
-      ctx.arc(points[i].x - radius * 0.3, points[i].y - radius * 0.3, radius * 0.5, 0, Math.PI * 2);
-      ctx.fill();
     }
 
-    drawHead(ctx, points[0], s.dir, cell, time);
-  };
-
-  const drawParticles = (ctx: CanvasRenderingContext2D) => {
-    const s = stateRef.current;
-    s.particles = s.particles.filter(p => {
-      p.x += p.vx; p.y += p.vy;
-      p.vy += 0.15;
-      p.vx *= 0.97; p.vy *= 0.97;
+    // Particles
+    const parts = s.particles;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.vx *= 0.97; p.vy *= 0.97;
       p.life--;
-      if (p.life <= 0) return false;
+      if (p.life <= 0) { parts.splice(i, 1); continue; }
       const alpha = p.life / p.maxLife;
-      ctx.save();
       ctx.globalAlpha = alpha;
       ctx.fillStyle = p.color;
-      ctx.shadowBlur = 6;
-      ctx.shadowColor = p.color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
-      return true;
-    });
-  };
-
-  const drawPopups = (ctx: CanvasRenderingContext2D) => {
-    const s = stateRef.current;
-    s.popups = s.popups.filter(p => {
-      p.y -= 0.7;
-      p.life--;
-      if (p.life <= 0) return false;
-      const alpha = p.life / p.maxLife;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.font = 'bold 18px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = p.color;
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = p.color;
-      ctx.fillText(p.text, p.x, p.y);
-      ctx.restore();
-      return true;
-    });
-  };
-
-  const drawVignette = (ctx: CanvasRenderingContext2D, size: number) => {
-    const vig = ctx.createRadialGradient(size / 2, size / 2, size * 0.4, size / 2, size / 2, size * 0.85);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.6)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, size, size);
-  };
-
-  const render = (time: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const size = canvas.width / dpr;
-    const cell = size / GRID;
-    const s = stateRef.current;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, size, size);
-
-    if (s.shake > 0.1) {
-      const sx = (Math.random() - 0.5) * s.shake;
-      const sy = (Math.random() - 0.5) * s.shake;
-      ctx.translate(sx, sy);
-      s.shake *= 0.85;
     }
+    ctx.globalAlpha = 1;
 
-    drawBackground(ctx, size, time);
-    drawTrails(ctx);
-    drawFood(ctx, s.food, cell, time);
-    drawSnake(ctx, cell, time);
-    drawParticles(ctx);
-    drawPopups(ctx);
-    drawVignette(ctx, size);
+    // Popups
+    for (let i = s.popups.length - 1; i >= 0; i--) {
+      const pop = s.popups[i];
+      pop.y -= 0.7; pop.life--;
+      if (pop.life <= 0) { s.popups.splice(i, 1); continue; }
+      ctx.globalAlpha = pop.life / pop.maxLife;
+      ctx.font = 'bold 18px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = pop.color;
+      ctx.fillText(pop.text, pop.x, pop.y);
+    }
+    ctx.globalAlpha = 1;
 
+    // Flash
     if (s.flash > 0.01) {
-      ctx.fillStyle = `rgba(${s.flashColor}, ${s.flash * 0.35})`;
+      ctx.fillStyle = `rgba(${s.flashColor}, ${s.flash * 0.3})`;
       ctx.fillRect(-20, -20, size + 40, size + 40);
       s.flash *= 0.88;
     }
@@ -627,13 +391,13 @@ export default function GamePage() {
     const loop = (now: number) => {
       if (!alive) return;
       const s = stateRef.current;
-      const dt = now - lastRef.current;
+      const dt = Math.min(now - lastRef.current, 100);
       lastRef.current = now;
 
       if (s.running && !s.paused) {
         accumRef.current += dt;
         let steps = 0;
-        while (accumRef.current >= s.tick && steps < 3) {
+        while (accumRef.current >= s.tick && steps < 2) {
           accumRef.current -= s.tick;
           s.prevSnake = s.snake.map(p => ({ ...p }));
           step();
@@ -641,17 +405,15 @@ export default function GamePage() {
           steps++;
           if (!s.running) break;
         }
-        if (steps === 3) accumRef.current = 0;
+        if (steps >= 2) accumRef.current = 0;
         s.tickProgress = Math.min(1, accumRef.current / s.tick);
       } else {
         s.tickProgress = 1;
       }
 
-      if (s.running && s.lastEatAt > 0) {
-        if (now - s.lastEatAt > COMBO_WINDOW && s.combo > 1) {
-          s.combo = 1;
-          setUi(p => ({ ...p, combo: 1 }));
-        }
+      if (s.running && s.lastEatAt > 0 && now - s.lastEatAt > COMBO_WINDOW && s.combo > 1) {
+        s.combo = 1;
+        setUi(p => ({ ...p, combo: 1 }));
       }
 
       render(now);
@@ -680,14 +442,14 @@ export default function GamePage() {
 
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (!touchStartRef.current) return;
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - touchStartRef.current.x;
-    const dy = touch.clientY - touchStartRef.current.y;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartRef.current.x;
+    const dy = t.clientY - touchStartRef.current.y;
     const s = stateRef.current;
     if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
     if (Math.abs(dx) > Math.abs(dy)) {
@@ -699,7 +461,6 @@ export default function GamePage() {
     }
     touchStartRef.current = null;
   };
-
   const dpad = (dir: { x: number; y: number }) => {
     const s = stateRef.current;
     if (!s.running) return;
@@ -713,23 +474,28 @@ export default function GamePage() {
         <ArrowLeft size={16} /> {t('back')}
       </Link>
 
-      <div className="mb-6">
-        <h1 className="font-display text-3xl md:text-4xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-fuchsia-500 bg-clip-text text-transparent flex items-center gap-3">
-          <Gamepad2 className="text-cyan-500" size={32} /> {t('title')}
-        </h1>
-        <p className="text-slate-500 mt-1">{t('subtitle')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="font-display text-3xl md:text-4xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-fuchsia-500 bg-clip-text text-transparent flex items-center gap-3">
+            <Gamepad2 className="text-cyan-500" size={32} /> Snake
+          </h1>
+          <p className="text-slate-500 mt-1">{t('subtitle')}</p>
+        </div>
+        <Link href={`/${locale}/penalty`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow-lg shadow-emerald-500/30 hover:opacity-90 transition">
+          <Target size={18} /> Penalty
+        </Link>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <div className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl shadow-cyan-500/10">
-            <div className="flex items-center justify-between p-3 md:p-4 bg-gradient-to-r from-slate-900 to-slate-950 backdrop-blur text-white border-b border-slate-800">
+            <div className="flex items-center justify-between p-3 md:p-4 bg-gradient-to-r from-slate-900 to-slate-950 text-white border-b border-slate-800">
               <div>
                 <p className="text-[10px] md:text-xs text-slate-400 uppercase tracking-wider font-semibold">Score</p>
                 <p className="text-xl md:text-2xl font-bold bg-gradient-to-r from-cyan-400 to-fuchsia-400 bg-clip-text text-transparent leading-none mt-1">{ui.score}</p>
               </div>
               {ui.combo > 1 && (
-                <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 shadow-lg shadow-orange-500/40 animate-pulse">
+                <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 shadow-lg shadow-orange-500/40">
                   <Flame size={14} />
                   <span className="text-sm font-bold">x{ui.combo}</span>
                 </div>
@@ -804,11 +570,11 @@ export default function GamePage() {
 
             <div className="lg:hidden p-4 grid grid-cols-3 gap-2 max-w-[240px] mx-auto bg-gradient-to-b from-slate-900 to-slate-950 border-t border-slate-800">
               <div />
-              <button onClick={() => dpad({ x: 0, y: -1 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors shadow-lg shadow-cyan-500/20" aria-label="Up"><ChevronUp size={28} /></button>
+              <button onClick={() => dpad({ x: 0, y: -1 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors" aria-label="Up"><ChevronUp size={28} /></button>
               <div />
-              <button onClick={() => dpad({ x: -1, y: 0 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors shadow-lg shadow-cyan-500/20" aria-label="Left"><ChevronLeft size={28} /></button>
-              <button onClick={() => dpad({ x: 0, y: 1 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors shadow-lg shadow-cyan-500/20" aria-label="Down"><ChevronDown size={28} /></button>
-              <button onClick={() => dpad({ x: 1, y: 0 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors shadow-lg shadow-cyan-500/20" aria-label="Right"><ChevronRight size={28} /></button>
+              <button onClick={() => dpad({ x: -1, y: 0 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors" aria-label="Left"><ChevronLeft size={28} /></button>
+              <button onClick={() => dpad({ x: 0, y: 1 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors" aria-label="Down"><ChevronDown size={28} /></button>
+              <button onClick={() => dpad({ x: 1, y: 0 })} className="aspect-square rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white transition-colors" aria-label="Right"><ChevronRight size={28} /></button>
             </div>
           </div>
         </div>
@@ -829,9 +595,7 @@ export default function GamePage() {
               <div className="space-y-2">
                 {leaderboard.map((entry: any, i: number) => (
                   <div key={i} className={`flex items-center gap-3 p-2 rounded-lg transition ${i === 0 ? 'bg-yellow-50 dark:bg-yellow-950/20' : i === 1 ? 'bg-slate-50 dark:bg-slate-800/50' : i === 2 ? 'bg-orange-50 dark:bg-orange-950/20' : ''}`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${i === 0 ? 'bg-yellow-400 text-yellow-900' : i === 1 ? 'bg-slate-300 text-slate-800' : i === 2 ? 'bg-orange-400 text-orange-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                      {i + 1}
-                    </div>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${i === 0 ? 'bg-yellow-400 text-yellow-900' : i === 1 ? 'bg-slate-300 text-slate-800' : i === 2 ? 'bg-orange-400 text-orange-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>{i + 1}</div>
                     <p className="flex-1 text-sm font-medium truncate">{entry.full_name || 'Joueur'}</p>
                     <p className="font-mono font-bold text-cyan-600 text-sm shrink-0">{entry.score}</p>
                   </div>
