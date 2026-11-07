@@ -68,8 +68,9 @@ export default function PenaltyPage() {
     cameraShake: 0,
     cameraZoom: 0,
     shootStartTime: 0,
+    slowmo: 0,
     flash: 0, flashHue: 90,
-    particles: [] as { mesh: THREE.Sprite; vx: number; vy: number; vz: number; life: number; maxLife: number; }[],
+    particles: [] as { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; maxLife: number; }[],
   });
 
   const [ui, setUi] = useState({
@@ -897,7 +898,6 @@ export default function PenaltyPage() {
       const mat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)], emissive: colors[Math.floor(Math.random() * colors.length)], emissiveIntensity: 0.5 });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(0, GOAL_H / 2, GOAL_Z);
-      s.scene?.add?.(mesh);
       T.current.scene.add(mesh);
       s.particles.push({
         mesh,
