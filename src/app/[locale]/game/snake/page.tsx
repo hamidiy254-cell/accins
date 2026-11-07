@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { Trophy, RotateCcw, Play, ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, Crown, Pause, Gamepad2, Award, Flame } from 'lucide-react';
+import { Trophy, RotateCcw, Play, ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, Crown, Pause, Gamepad2, Award, Flame, Target } from 'lucide-react';
 
 const GRID = 22;
 const TICK_BASE = 155;
