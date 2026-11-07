@@ -3,71 +3,51 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale } from 'next-intl';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { Trophy, RotateCcw, Play, ArrowLeft, Target, Crown, Award, Volume2, VolumeX, Zap, CheckCircle2, XCircle } from 'lucide-react';
+import { Trophy, RotateCcw, Play, ArrowLeft, Target, Crown, Award, Volume2, VolumeX, Maximize2, Minimize2, CheckCircle2, XCircle } from 'lucide-react';
 import { initAudio, playKick, playCrowd, playWhistle, playPost, playSave, setMuted, isMuted } from '@/lib/game-audio';
+import * as THREE from 'three';
 
-// ============================================================
-// CONSTANTES 3D (en mètres)
-// ============================================================
-const GOAL_Z = 12;              // Distance du but depuis la caméra
-const GOAL_W = 7.32;            // Largeur du but
-const GOAL_H = 2.44;            // Hauteur du but
-const BALL_R = 0.11;            // Rayon ballon
-const BALL_Z_START = 2.5;       // Ballon à 2.5m de la caméra
+const GOAL_W = 7.32;
+const GOAL_H = 2.44;
+const GOAL_Z = 12;
+const BALL_R = 0.11;
 const GRAVITY = 9.8;
-const CAM_HEIGHT = 1.6;         // Hauteur caméra
-const SHOT_DURATION = 0.62;     // Temps vol du ballon (s)
+const SHOT_TIME = 0.62;
 const TOTAL_SHOTS = 5;
+const KEEPER_REACH = 1.15;
 
 type Phase = 'ready' | 'aiming' | 'shooting' | 'result' | 'done';
 type ShotResult = 'goal' | 'save' | 'post' | 'miss';
 
-// Projection 3D → 2D
-function project(worldX: number, worldY: number, worldZ: number, W: number, H: number, focal: number) {
-  const dz = worldZ;
-  if (dz < 0.1) return null;
-  const scale = focal / dz;
-  const sx = W / 2 + worldX * scale;
-  const sy = H * 0.55 - (worldY - CAM_HEIGHT) * scale;
-  return { x: sx, y: sy, scale };
-}
-
 export default function PenaltyPage() {
   const locale = useLocale();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number | undefined>(undefined);
   const isMobileRef = useRef(false);
   const [muteState, setMuteState] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const threeRef = useRef<any>({
+    scene: null, camera: null, renderer: null, ball: null, ballShadow: null,
+    keeper: null, keeperArms: null, net: null, raycaster: null, goalPlane: null,
+    goalMesh: null, animId: null, ambient: null, dirLight: null,
+  });
 
   const S = useRef({
     phase: 'ready' as Phase,
-    // Ball 3D
-    bx: 0, by: BALL_R, bz: BALL_Z_START,
-    bvx: 0, bvy: 0, bvz: 0,
-    bRot: 0,
-    bTrail: [] as { x: number; y: number; z: number; life: number }[],
-    // Target
-    tx: 0, ty: 1.22, tz: GOAL_Z,
-    aimActive: false,
-    // Keeper
-    kx: 0, ky: 1.22, kz: GOAL_Z - 0.3,
-    kdiveX: 0, kdiveY: 0,
-    kProgress: 0,
-    kAnim: 'idle' as 'idle' | 'diveL' | 'diveR' | 'jump',
-    // Game state
+    ballPos: new THREE.Vector3(0, BALL_R, 0),
+    ballVel: new THREE.Vector3(0, 0, 0),
+    ballSpin: 0,
+    targetPos: new THREE.Vector3(0, 1.1, GOAL_Z),
+    keeperX: 0, keeperY: 1.15,
+    keeperTargetX: 0, keeperTargetY: 1.15,
+    keeperProgress: 0,
+    keeperAnim: 'idle',
     goals: 0, saves: 0, shots: 0,
     lastResult: null as ShotResult | null,
     shotsLog: [] as ShotResult[],
-    // FX
     netWave: 0,
-    shake: 0,
-    flash: 0,
-    flashHue: 90,
-    particles: [] as { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; hue: number; }[],
-    confetti: [] as { x: number; y: number; vx: number; vy: number; rot: number; rotV: number; life: number; color: string; }[],
-    time: 0,
-    kickAnim: 0,
+    resolved: false,
     resultTimer: 0,
   });
 
@@ -100,93 +80,460 @@ export default function PenaltyPage() {
   }, []);
 
   useEffect(() => {
-    const resize = () => {
-      const c = canvasRef.current, container = containerRef.current;
-      if (!c || !container) return;
-      const w = container.clientWidth;
-      const h = Math.min(w * 0.62, 420);
-      const dpr = isMobileRef.current ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
-      c.width = w * dpr; c.height = h * dpr;
-      c.style.width = w + 'px'; c.style.height = h + 'px';
-    };
-    resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
+    const onFS = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFS);
+    return () => document.removeEventListener('fullscreenchange', onFS);
   }, []);
 
-  const start = () => {
-    const s = S.current;
-    s.phase = 'aiming';
-    s.goals = 0; s.saves = 0; s.shots = 0;
-    s.shotsLog = [];
-    s.lastResult = null;
-    s.particles = []; s.confetti = [];
-    s.shake = 0; s.flash = 0;
-    s.netWave = 0; s.kickAnim = 0; s.resultTimer = 0;
-    resetShot();
-    setUi(p => ({ ...p, goals: 0, saves: 0, shots: 0, phase: 'aiming', lastResult: null, score: 0, shotsLog: [] }));
-    setSaved(false);
-    playWhistle();
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
   };
 
-  const resetShot = () => {
-    const s = S.current;
-    s.bx = 0; s.by = BALL_R; s.bz = BALL_Z_START;
-    s.bvx = 0; s.bvy = 0; s.bvz = 0;
-    s.bRot = 0;
-    s.bTrail = [];
-    s.kx = 0; s.ky = 1.22; s.kProgress = 0;
-    s.kdiveX = 0; s.kdiveY = 0;
-    s.kAnim = 'idle';
-    s.kickAnim = 0;
-    s.netWave = 0;
-    s.lastResult = null;
-    s.resultTimer = 0;
-  };
+  // ============ THREE.JS SETUP ============
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let alive = true;
+    const R = threeRef.current;
 
-  const aimAt = (screenX: number, screenY: number, W: number, H: number, focal: number) => {
-    const s = S.current;
-    if (s.phase !== 'aiming') return;
-    // Convertir écran → plan du but (z=GOAL_Z)
-    const relX = screenX - W / 2;
-    const relY = H * 0.55 - screenY;
-    const wx = relX * GOAL_Z / focal;
-    const wy = relY * GOAL_Z / focal + CAM_HEIGHT;
-    // Clamp dans les limites du but + marge
-    s.tx = Math.max(-GOAL_W / 2 + 0.2, Math.min(GOAL_W / 2 - 0.2, wx));
-    s.ty = Math.max(0.15, Math.min(GOAL_H - 0.1, wy));
-    s.aimActive = true;
-  };
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x051018, 25, 60);
+    R.scene = scene;
 
-  const shoot = () => {
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+    camera.position.set(0, 1.4, -3);
+    camera.lookAt(0, 1.1, GOAL_Z);
+    R.camera = camera;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: !isMobileRef.current, alpha: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(isMobileRef.current ? 1 : Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = !isMobileRef.current;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.setClearColor(0x020617, 1);
+    mount.appendChild(renderer.domElement);
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.cursor = 'crosshair';
+    R.renderer = renderer;
+
+    // Sky gradient background
+    const skyCanvas = document.createElement('canvas');
+    skyCanvas.width = 16;
+    skyCanvas.height = 256;
+    const skg = skyCanvas.getContext('2d')!;
+    const grad = skg.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#020617');
+    grad.addColorStop(0.5, '#0a1a3d');
+    grad.addColorStop(1, '#1e3a8a');
+    skg.fillStyle = grad;
+    skg.fillRect(0, 0, 16, 256);
+    const skyTex = new THREE.CanvasTexture(skyCanvas);
+    scene.background = skyTex;
+
+    // Lights
+    const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambient);
+    R.ambient = ambient;
+
+    const dirLight = new THREE.DirectionalLight(0xfff5e0, 1.6);
+    dirLight.position.set(-8, 20, 3);
+    dirLight.castShadow = !isMobileRef.current;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    dirLight.shadow.camera.left = -15;
+    dirLight.shadow.camera.right = 15;
+    dirLight.shadow.camera.top = 15;
+    dirLight.shadow.camera.bottom = -15;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 50;
+    scene.add(dirLight);
+    R.dirLight = dirLight;
+
+    // Floodlights
+    for (const x of [-14, 14]) {
+      for (const z of [-2, 20]) {
+        const pl = new THREE.PointLight(0xfff5e0, 1.2, 40, 2);
+        pl.position.set(x, 12, z);
+        scene.add(pl);
+      }
+    }
+
+    // Grass texture
+    const grassCanvas = document.createElement('canvas');
+    grassCanvas.width = 512;
+    grassCanvas.height = 1024;
+    const gg = grassCanvas.getContext('2d')!;
+    gg.fillStyle = '#15682f';
+    gg.fillRect(0, 0, 512, 1024);
+    for (let i = 0; i < 8; i++) {
+      if (i % 2 === 0) {
+        gg.fillStyle = '#1a7a38';
+        gg.fillRect(0, i * 128, 512, 128);
+      }
+    }
+    for (let i = 0; i < 3000; i++) {
+      gg.fillStyle = `rgba(${30 + Math.random() * 40}, ${100 + Math.random() * 60}, ${40 + Math.random() * 30}, 0.15)`;
+      gg.fillRect(Math.random() * 512, Math.random() * 1024, 2, 2);
+    }
+    const grassTex = new THREE.CanvasTexture(grassCanvas);
+    grassTex.wrapS = THREE.RepeatWrapping;
+    grassTex.wrapT = THREE.RepeatWrapping;
+    grassTex.repeat.set(2, 2);
+    grassTex.anisotropy = isMobileRef.current ? 1 : 4;
+
+    const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95, metalness: 0 });
+    const grass = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), grassMat);
+    grass.rotation.x = -Math.PI / 2;
+    grass.position.set(0, 0, GOAL_Z + 5);
+    grass.receiveShadow = !isMobileRef.current;
+    scene.add(grass);
+
+    // Stadium stands (background)
+    const crowdCanvas = document.createElement('canvas');
+    crowdCanvas.width = 1024;
+    crowdCanvas.height = 256;
+    const cg = crowdCanvas.getContext('2d')!;
+    cg.fillStyle = '#0a0f1e';
+    cg.fillRect(0, 0, 1024, 256);
+    for (let i = 0; i < 3000; i++) {
+      const colors = ['#4b5563', '#6b7280', '#374151', '#7c3aed', '#0891b2', '#f59e0b', '#ec4899', '#f43f5e'];
+      cg.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+      cg.beginPath();
+      cg.arc(Math.random() * 1024, Math.random() * 256, 2.5, 0, Math.PI * 2);
+      cg.fill();
+    }
+    const crowdTex = new THREE.CanvasTexture(crowdCanvas);
+    const crowdMat = new THREE.MeshStandardMaterial({ map: crowdTex, roughness: 1 });
+    const crowd = new THREE.Mesh(new THREE.PlaneGeometry(60, 15), crowdMat);
+    crowd.position.set(0, 7, GOAL_Z + 25);
+    scene.add(crowd);
+
+    // Goal posts
+    const postMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.6 });
+    const postGeo = new THREE.CylinderGeometry(0.06, 0.06, GOAL_H, 16);
+    const leftPost = new THREE.Mesh(postGeo, postMat);
+    leftPost.position.set(-GOAL_W / 2, GOAL_H / 2, GOAL_Z);
+    leftPost.castShadow = !isMobileRef.current;
+    scene.add(leftPost);
+    const rightPost = new THREE.Mesh(postGeo, postMat);
+    rightPost.position.set(GOAL_W / 2, GOAL_H / 2, GOAL_Z);
+    rightPost.castShadow = !isMobileRef.current;
+    scene.add(rightPost);
+    const barGeo = new THREE.CylinderGeometry(0.06, 0.06, GOAL_W, 16);
+    const crossbar = new THREE.Mesh(barGeo, postMat);
+    crossbar.rotation.z = Math.PI / 2;
+    crossbar.position.set(0, GOAL_H, GOAL_Z);
+    crossbar.castShadow = !isMobileRef.current;
+    scene.add(crossbar);
+
+    // Net
+    const netCanvas = document.createElement('canvas');
+    netCanvas.width = 256;
+    netCanvas.height = 128;
+    const ng = netCanvas.getContext('2d')!;
+    ng.clearRect(0, 0, 256, 128);
+    ng.strokeStyle = 'rgba(255,255,255,0.65)';
+    ng.lineWidth = 2;
+    for (let i = 0; i <= 32; i++) {
+      ng.beginPath(); ng.moveTo(i * 8, 0); ng.lineTo(i * 8, 128); ng.stroke();
+    }
+    for (let i = 0; i <= 16; i++) {
+      ng.beginPath(); ng.moveTo(0, i * 8); ng.lineTo(256, i * 8); ng.stroke();
+    }
+    const netTex = new THREE.CanvasTexture(netCanvas);
+    netTex.wrapS = THREE.RepeatWrapping;
+    netTex.wrapT = THREE.RepeatWrapping;
+    netTex.repeat.set(3, 2);
+    const netMat = new THREE.MeshBasicMaterial({ map: netTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(GOAL_W, GOAL_H), netMat);
+    net.position.set(0, GOAL_H / 2, GOAL_Z + 1.2);
+    scene.add(net);
+    R.net = net;
+
+    // Ball
+    const ballCanvas = document.createElement('canvas');
+    ballCanvas.width = 512;
+    ballCanvas.height = 256;
+    const bg = ballCanvas.getContext('2d')!;
+    bg.fillStyle = '#f8fafc';
+    bg.fillRect(0, 0, 512, 256);
+    bg.fillStyle = '#0f172a';
+    for (let i = 0; i < 12; i++) {
+      const x = (i % 4) * 128 + 64 + (Math.random() - 0.5) * 20;
+      const y = Math.floor(i / 4) * 85 + 42;
+      bg.beginPath();
+      for (let j = 0; j < 5; j++) {
+        const a = (j / 5) * Math.PI * 2 - Math.PI / 2;
+        const r = 18;
+        if (j === 0) bg.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+        else bg.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      }
+      bg.closePath();
+      bg.fill();
+    }
+    const ballTex = new THREE.CanvasTexture(ballCanvas);
+    const ballMat = new THREE.MeshStandardMaterial({ map: ballTex, roughness: 0.35, metalness: 0.05 });
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 32, 24), ballMat);
+    ball.castShadow = !isMobileRef.current;
+    ball.position.copy(S.current.ballPos);
+    scene.add(ball);
+    R.ball = ball;
+
+    // Ball shadow decal (fallback for mobile where shadows are off)
+    if (isMobileRef.current) {
+      const shadowCanvas = document.createElement('canvas');
+      shadowCanvas.width = 64; shadowCanvas.height = 64;
+      const sg = shadowCanvas.getContext('2d')!;
+      const rg = sg.createRadialGradient(32, 32, 0, 32, 32, 32);
+      rg.addColorStop(0, 'rgba(0,0,0,0.5)');
+      rg.addColorStop(1, 'rgba(0,0,0,0)');
+      sg.fillStyle = rg;
+      sg.fillRect(0, 0, 64, 64);
+      const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+      const shadowMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false });
+      const ballShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), shadowMat);
+      ballShadow.rotation.x = -Math.PI / 2;
+      ballShadow.position.copy(S.current.ballPos);
+      ballShadow.position.y = 0.001;
+      scene.add(ballShadow);
+      R.ballShadow = ballShadow;
+    }
+
+    // Keeper (simple humanoid with boxes)
+    const keeper = new THREE.Group();
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.7 });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xfcd34d, roughness: 0.6 });
+    const gloveMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.85, 0.28), skinMat);
+    torso.position.y = 1.05;
+    torso.castShadow = !isMobileRef.current;
+    keeper.add(torso);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), headMat);
+    head.position.y = 1.68;
+    head.castShadow = !isMobileRef.current;
+    keeper.add(head);
+
+    const armGeo = new THREE.BoxGeometry(0.1, 0.55, 0.1);
+    const leftArm = new THREE.Mesh(armGeo, skinMat);
+    leftArm.position.set(-0.35, 1.05, 0);
+    leftArm.rotation.z = Math.PI / 8;
+    keeper.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeo, skinMat);
+    rightArm.position.set(0.35, 1.05, 0);
+    rightArm.rotation.z = -Math.PI / 8;
+    keeper.add(rightArm);
+    R.keeperArms = { left: leftArm, right: rightArm };
+
+    const gloveGeo = new THREE.SphereGeometry(0.1, 8, 8);
+    const lGlove = new THREE.Mesh(gloveGeo, gloveMat);
+    lGlove.position.set(-0.42, 1.35, 0);
+    keeper.add(lGlove);
+    const rGlove = new THREE.Mesh(gloveGeo, gloveMat);
+    rGlove.position.set(0.42, 1.35, 0);
+    keeper.add(rGlove);
+
+    const legGeo = new THREE.BoxGeometry(0.15, 0.6, 0.15);
+    const leftLeg = new THREE.Mesh(legGeo, skinMat);
+    leftLeg.position.set(-0.13, 0.4, 0);
+    leftLeg.castShadow = !isMobileRef.current;
+    keeper.add(leftLeg);
+    const rightLeg = new THREE.Mesh(legGeo, skinMat);
+    rightLeg.position.set(0.13, 0.4, 0);
+    rightLeg.castShadow = !isMobileRef.current;
+    keeper.add(rightLeg);
+
+    keeper.position.set(0, 0, GOAL_Z - 0.5);
+    scene.add(keeper);
+    R.keeper = keeper;
+
+    // Raycaster for aiming
+    const raycaster = new THREE.Raycaster();
+    const goalPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -GOAL_Z);
+    R.raycaster = raycaster;
+    R.goalPlane = goalPlane;
+
+    // Resize
+    const resize = () => {
+      const container = mountRef.current;
+      if (!container) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(mount);
+
+    // Pointer events
+    const pointerToNDC = (clientX: number, clientY: number) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      return new THREE.Vector2(x, y);
+    };
+
+    const aimAndShoot = (clientX: number, clientY: number) => {
+      const s = S.current;
+      if (s.phase !== 'aiming') return;
+
+      const ndc = pointerToNDC(clientX, clientY);
+      raycaster.setFromCamera(ndc, camera);
+      const pt = new THREE.Vector3();
+      const hit = raycaster.ray.intersectPlane(goalPlane, pt);
+      if (!hit) return;
+
+      const tx = Math.max(-GOAL_W / 2 + 0.2, Math.min(GOAL_W / 2 - 0.2, pt.x));
+      const ty = Math.max(0.2, Math.min(GOAL_H - 0.15, pt.y));
+      s.targetPos.set(tx, ty, GOAL_Z);
+      shoot(tx, ty);
+    };
+
+    const onPointer = (e: PointerEvent) => {
+      e.preventDefault();
+      aimAndShoot(e.clientX, e.clientY);
+    };
+
+    renderer.domElement.addEventListener('pointerdown', onPointer);
+
+    // Animation loop
+    let lastTime = performance.now();
+    const animate = (now: number) => {
+      if (!alive) return;
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      const s = S.current;
+
+      // Keeper movement
+      if (s.phase === 'shooting' || s.phase === 'result') {
+        s.keeperProgress = Math.min(1, s.keeperProgress + dt * 2.2);
+        const ease = 1 - Math.pow(1 - s.keeperProgress, 3);
+        s.keeperX = s.keeperTargetX * ease;
+        s.keeperY = 1.15 + (s.keeperTargetY - 1.15) * ease;
+        if (keeper) {
+          keeper.position.x = s.keeperX;
+          keeper.position.y = s.keeperY - 1.15;
+          if (R.keeperArms) {
+            const spread = ease;
+            R.keeperArms.left.rotation.z = Math.PI / 8 + spread * 1.4;
+            R.keeperArms.right.rotation.z = -Math.PI / 8 - spread * 1.4;
+            R.keeperArms.left.position.x = -0.35 - spread * 0.5;
+            R.keeperArms.right.position.x = 0.35 + spread * 0.5;
+          }
+        }
+      } else if (s.phase === 'aiming' || s.phase === 'ready') {
+        // Idle sway
+        const sway = Math.sin(now / 800) * 0.05;
+        if (keeper) {
+          keeper.position.x = sway;
+          keeper.position.y = 0;
+        }
+        if (R.keeperArms) {
+          R.keeperArms.left.rotation.z = Math.PI / 8;
+          R.keeperArms.right.rotation.z = -Math.PI / 8;
+          R.keeperArms.left.position.x = -0.35;
+          R.keeperArms.right.position.x = 0.35;
+        }
+      }
+
+      // Ball physics
+      if (s.phase === 'shooting' && !s.resolved) {
+        s.ballPos.x += s.ballVel.x * dt;
+        s.ballPos.y += s.ballVel.y * dt;
+        s.ballPos.z += s.ballVel.z * dt;
+        s.ballVel.y -= GRAVITY * dt;
+        s.ballSpin += (s.ballVel.z + s.ballVel.x) * dt * 4;
+
+        if (ball) {
+          ball.position.copy(s.ballPos);
+          ball.rotation.x = s.ballSpin;
+          ball.rotation.y = s.ballSpin * 0.5;
+        }
+        if (R.ballShadow) {
+          R.ballShadow.position.set(s.ballPos.x, 0.001, s.ballPos.z);
+          const scale = 1 + Math.max(0, s.ballPos.y) * 0.8;
+          R.ballShadow.scale.set(scale, scale, 1);
+          (R.ballShadow.material as any).opacity = Math.max(0.05, 0.5 - s.ballPos.y * 0.15);
+        }
+
+        // Net deformation
+        if (s.netWave > 0.01 && net) {
+          net.scale.z = 1 + s.netWave * 0.15;
+          s.netWave *= 0.9;
+        }
+
+        // Detect crossing goal plane
+        if (s.ballPos.z >= GOAL_Z) {
+          s.resolved = true;
+          resolveResult();
+        }
+      }
+
+      // Result timer
+      if (s.phase === 'result') {
+        s.resultTimer += dt;
+      }
+
+      renderer.render(scene, camera);
+      R.animId = requestAnimationFrame(animate);
+    };
+    R.animId = requestAnimationFrame(animate);
+
+    return () => {
+      alive = false;
+      if (R.animId) cancelAnimationFrame(R.animId);
+      ro.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', onPointer);
+      renderer.dispose();
+      scene.traverse((obj) => {
+        if ((obj as any).geometry) (obj as any).geometry.dispose();
+        if ((obj as any).material) {
+          const m = (obj as any).material;
+          if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
+          else m.dispose();
+        }
+      });
+      if (mount.contains(renderer.domElement)) {
+        mount.removeChild(renderer.domElement);
+      }
+    };
+  }, []);
+
+  const shoot = (tx: number, ty: number) => {
     const s = S.current;
     if (s.phase !== 'aiming') return;
     s.phase = 'shooting';
-    s.kickAnim = 1;
+    s.resolved = false;
+    s.keeperProgress = 0;
 
-    // Calculer la vélocité pour atteindre (tx, ty, GOAL_Z) en SHOT_DURATION
-    const dx = s.tx - s.bx;
-    const dy = s.ty - s.by;
-    const dz = GOAL_Z - s.bz;
-    s.bvx = dx / SHOT_DURATION;
-    s.bvz = dz / SHOT_DURATION;
-    s.bvy = dy / SHOT_DURATION + 0.5 * GRAVITY * SHOT_DURATION;
+    const dx = tx - s.ballPos.x;
+    const dy = ty - s.ballPos.y;
+    const dz = GOAL_Z - s.ballPos.z;
+    s.ballVel.set(dx / SHOT_TIME, dy / SHOT_TIME + 0.5 * GRAVITY * SHOT_TIME, dz / SHOT_TIME);
 
-    // Keeper AI
-    const rand = Math.random();
-    const guessCorrect = rand < 0.42; // 42% chance de bien deviner le côté
+    // Keeper AI - 40% chance to guess correct side
+    const guessCorrect = Math.random() < 0.4;
     let keeperTargetX: number;
     if (guessCorrect) {
-      keeperTargetX = s.tx > 0 ? 1.5 + Math.random() * 1 : -1.5 - Math.random() * 1;
+      keeperTargetX = tx > 0 ? 1.3 + Math.random() * 1.2 : -1.3 - Math.random() * 1.2;
     } else {
-      keeperTargetX = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.random() * 2);
+      keeperTargetX = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.random() * 1.8);
     }
-    keeperTargetX = Math.max(-GOAL_W / 2 + 0.3, Math.min(GOAL_W / 2 - 0.3, keeperTargetX));
-    const keeperTargetY = s.ty > GOAL_H * 0.6 && Math.random() < 0.55 ? 1.6 + Math.random() * 0.6 : 0.8 + Math.random() * 0.4;
-
-    s.kdiveX = keeperTargetX;
-    s.kdiveY = keeperTargetY;
-    s.kAnim = keeperTargetX < -0.4 ? 'diveL' : keeperTargetX > 0.4 ? 'diveR' : 'jump';
+    keeperTargetX = Math.max(-GOAL_W / 2 + 0.4, Math.min(GOAL_W / 2 - 0.4, keeperTargetX));
+    const keeperTargetY = ty > GOAL_H * 0.55 && Math.random() < 0.5 ? 1.5 + Math.random() * 0.6 : 0.85 + Math.random() * 0.35;
+    s.keeperTargetX = keeperTargetX;
+    s.keeperTargetY = keeperTargetY;
 
     playKick();
     setUi(p => ({ ...p, phase: 'shooting' }));
@@ -194,65 +541,38 @@ export default function PenaltyPage() {
 
   const resolveResult = () => {
     const s = S.current;
+    const bx = s.ballPos.x;
+    const by = s.ballPos.y;
+
+    const nearPost = Math.abs(Math.abs(bx) - GOAL_W / 2) < BALL_R + 0.15;
+    const nearBar = Math.abs(by - GOAL_H) < BALL_R + 0.15;
+    const insideX = Math.abs(bx) < GOAL_W / 2 - BALL_R;
+    const insideY = by > BALL_R && by < GOAL_H - BALL_R;
+    const insideGoal = insideX && insideY;
+
     let result: ShotResult = 'goal';
 
-    // Position finale
-    const finalX = s.bx;
-    const finalY = s.by;
-
-    // Poteau ?
-    const nearPost = Math.abs(Math.abs(finalX) - GOAL_W / 2) < BALL_R + 0.08 || Math.abs(finalY - GOAL_H) < BALL_R + 0.08;
-    const insideGoal = Math.abs(finalX) < GOAL_W / 2 - BALL_R && finalY > BALL_R && finalY < GOAL_H - BALL_R;
-
-    if (!insideGoal && !nearPost) {
-      result = 'miss';
-    } else if (nearPost && (!insideGoal || Math.random() < 0.5)) {
+    if (nearPost || nearBar) {
       result = 'post';
       playPost();
+    } else if (!insideGoal) {
+      result = 'miss';
     } else {
-      // Check keeper
-      const keeperReach = 1.15;
-      const dxK = Math.abs(finalX - s.kx);
-      const dyK = Math.abs(finalY - s.ky);
-      const dist = Math.sqrt(dxK * dxK + dyK * dyK);
-      if (dist < keeperReach && s.kProgress > 0.3) {
+      const kpX = s.keeperX;
+      const kpY = s.keeperY;
+      const kdist = Math.sqrt((bx - kpX) ** 2 + (by - kpY) ** 2);
+      if (kdist < KEEPER_REACH && s.keeperProgress > 0.25) {
         result = 'save';
+        playSave();
       } else {
         result = 'goal';
         s.netWave = 1;
-        // Confetti
-        for (let i = 0; i < 40; i++) {
-          s.confetti.push({
-            x: Math.random(), y: 0,
-            vx: (Math.random() - 0.5) * 0.008,
-            vy: 0.003 + Math.random() * 0.005,
-            rot: Math.random() * Math.PI * 2,
-            rotV: (Math.random() - 0.5) * 0.3,
-            life: 120 + Math.random() * 60,
-            color: ['#fbbf24','#f43f5e','#22c55e','#3b82f6','#a855f7'][Math.floor(Math.random()*5)],
-          });
-        }
-        // Particles
-        for (let i = 0; i < 20; i++) {
-          const a = Math.random() * Math.PI * 2;
-          const sp = 2 + Math.random() * 5;
-          s.particles.push({ x: Math.random(), y: Math.random() * 0.5, vx: Math.cos(a) * sp * 0.002, vy: Math.sin(a) * sp * 0.002, life: 60, maxLife: 60, hue: 45 + Math.random() * 30 });
-        }
-        s.flash = 0.6; s.flashHue = 120;
-        s.shake = 6;
         playCrowd(true);
       }
     }
 
-    if (result === 'save') {
-      s.flash = 0.4; s.flashHue = 0;
-      s.shake = 8;
-      playSave();
-    }
-
     s.lastResult = result;
     s.phase = 'result';
-    s.resultTimer = 0;
     s.shots++;
     s.shotsLog.push(result);
     if (result === 'goal') s.goals++;
@@ -275,7 +595,43 @@ export default function PenaltyPage() {
         setUi(p => ({ ...p, phase: 'aiming', lastResult: null }));
         playWhistle();
       }
-    }, 2200);
+    }, 2000);
+  };
+
+  const resetShot = () => {
+    const s = S.current;
+    s.ballPos.set(0, BALL_R, 0);
+    s.ballVel.set(0, 0, 0);
+    s.ballSpin = 0;
+    s.keeperX = 0;
+    s.keeperY = 1.15;
+    s.keeperTargetX = 0;
+    s.keeperTargetY = 1.15;
+    s.keeperProgress = 0;
+    s.resolved = false;
+    s.netWave = 0;
+    s.lastResult = null;
+    if (threeRef.current.ball) {
+      threeRef.current.ball.position.copy(s.ballPos);
+      threeRef.current.ball.rotation.set(0, 0, 0);
+    }
+    if (threeRef.current.keeper) {
+      threeRef.current.keeper.position.set(0, 0, GOAL_Z - 0.5);
+    }
+    if (threeRef.current.net) {
+      threeRef.current.net.scale.z = 1;
+    }
+  };
+
+  const start = () => {
+    const s = S.current;
+    s.goals = 0; s.saves = 0; s.shots = 0;
+    s.shotsLog = [];
+    resetShot();
+    s.phase = 'aiming';
+    setUi(p => ({ ...p, goals: 0, saves: 0, shots: 0, phase: 'aiming', lastResult: null, score: 0, shotsLog: [] }));
+    setSaved(false);
+    playWhistle();
   };
 
   const finish = async () => {
@@ -292,492 +648,32 @@ export default function PenaltyPage() {
     }
   };
 
-  const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const s = S.current;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const W = rect.width, H = rect.height;
-    const focal = W * 0.9;
-    if (s.phase === 'aiming') {
-      aimAt(x, y, W, H, focal);
-      setTimeout(shoot, 60);
-    }
-  };
-
-  const onTouch = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const s = S.current;
-    const rect = canvas.getBoundingClientRect();
-    const t = e.changedTouches[0];
-    const x = t.clientX - rect.left;
-    const y = t.clientY - rect.top;
-    const W = rect.width, H = rect.height;
-    const focal = W * 0.9;
-    if (s.phase === 'aiming') {
-      aimAt(x, y, W, H, focal);
-      setTimeout(shoot, 60);
-    }
-  };
-
   const toggleMute = () => {
     const m = !isMuted(); setMuted(m); setMuteState(m);
   };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
-  const render = (time: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) return;
-    const dpr = isMobileRef.current ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
-    const W = canvas.width / dpr, H = canvas.height / dpr;
-    const s = S.current;
-    const focal = W * 0.9;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-
-    if (s.shake > 0.1) {
-      ctx.translate((Math.random() - 0.5) * s.shake, (Math.random() - 0.5) * s.shake);
-      s.shake *= 0.88;
-    }
-
-    // --- SKY ---
-    const sky = ctx.createLinearGradient(0, 0, 0, H * 0.5);
-    sky.addColorStop(0, '#020617');
-    sky.addColorStop(0.5, '#0a1a3d');
-    sky.addColorStop(1, '#1e3a8a');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, H * 0.55);
-
-    // Stars
-    for (let i = 0; i < 60; i++) {
-      const sx = ((i * 7919) % 1000) / 1000 * W;
-      const sy = ((i * 1979) % 1000) / 1000 * H * 0.35;
-      const sp = 0.3 + 0.7 * Math.abs(Math.sin(time / 800 + i));
-      ctx.fillStyle = `rgba(255, 255, 255, ${sp * 0.7})`;
-      ctx.beginPath(); ctx.arc(sx, sy, 1.2, 0, Math.PI * 2); ctx.fill();
-    }
-
-    // --- FLOODLIGHTS (4 coins) ---
-    const lightPositions = [
-      { x: W * 0.08, y: H * 0.08 },
-      { x: W * 0.92, y: H * 0.08 },
-      { x: W * 0.15, y: H * 0.15 },
-      { x: W * 0.85, y: H * 0.15 },
-    ];
-    lightPositions.forEach((lp, i) => {
-      const glow = ctx.createRadialGradient(lp.x, lp.y, 0, lp.x, lp.y, 60);
-      glow.addColorStop(0, 'rgba(255, 255, 200, 0.35)');
-      glow.addColorStop(1, 'rgba(255, 255, 200, 0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(lp.x, lp.y, 60, 0, Math.PI * 2); ctx.fill();
-      // Light beam
-      if (!isMobileRef.current) {
-        ctx.fillStyle = 'rgba(255, 255, 200, 0.06)';
-        ctx.beginPath();
-        ctx.moveTo(lp.x - 8, lp.y + 8);
-        ctx.lineTo(lp.x + 8, lp.y + 8);
-        ctx.lineTo(lp.x + 100, H * 0.55);
-        ctx.lineTo(lp.x - 100, H * 0.55);
-        ctx.closePath();
-        ctx.fill();
-      }
-    });
-
-    // --- STADIUM STANDS ---
-    const standTop = H * 0.18, standBot = H * 0.42;
-    ctx.fillStyle = '#0a0f1e';
-    ctx.fillRect(0, standTop, W, standBot - standTop);
-    // Crowd dots
-    for (let i = 0; i < 120; i++) {
-      const cx = (i % 60) * (W / 60) + (W / 120);
-      const cy = standTop + Math.floor(i / 60) * 12 + 6;
-      const c = ['#4b5563','#6b7280','#374151','#7c3aed','#0891b2','#f59e0b','#ec4899'][i % 7];
-      ctx.fillStyle = c;
-      ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
-    }
-
-    // --- GRASS (perspective) ---
-    const horizonY = H * 0.42;
-    const grassGrad = ctx.createLinearGradient(0, horizonY, 0, H);
-    grassGrad.addColorStop(0, '#166534');
-    grassGrad.addColorStop(0.4, '#15803d');
-    grassGrad.addColorStop(0.7, '#166534');
-    grassGrad.addColorStop(1, '#14532d');
-    ctx.fillStyle = grassGrad;
-    ctx.fillRect(0, horizonY, W, H - horizonY);
-
-    // Grass stripes (perspective)
-    for (let i = 0; i < 12; i++) {
-      if (i % 2 === 0) continue;
-      const t1 = i / 12, t2 = (i + 1) / 12;
-      const y1 = horizonY + (H - horizonY) * t1 * t1;
-      const y2 = horizonY + (H - horizonY) * t2 * t2;
-      ctx.fillStyle = 'rgba(255,255,255,0.03)';
-      ctx.fillRect(0, y1, W, y2 - y1);
-    }
-
-    // --- GOAL LINE ---
-    const glLeft = project(-GOAL_W/2 - 1, 0, GOAL_Z, W, H, focal);
-    const glRight = project(GOAL_W/2 + 1, 0, GOAL_Z, W, H, focal);
-    if (glLeft && glRight) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(glLeft.x, glLeft.y); ctx.lineTo(glRight.x, glRight.y); ctx.stroke();
-    }
-
-    // --- GOAL ---
-    const goalTL = project(-GOAL_W/2, GOAL_H, GOAL_Z, W, H, focal);
-    const goalTR = project(GOAL_W/2, GOAL_H, GOAL_Z, W, H, focal);
-    const goalBL = project(-GOAL_W/2, 0, GOAL_Z, W, H, focal);
-    const goalBR = project(GOAL_W/2, 0, GOAL_Z, W, H, focal);
-
-    if (goalTL && goalTR && goalBL && goalBR) {
-      // Net
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 1;
-      for (let i = 1; i < 18; i++) {
-        const t = i / 18;
-        const x1 = goalTL.x + (goalTR.x - goalTL.x) * t;
-        const y1 = goalTL.y + (goalTR.y - goalTL.y) * t;
-        const x2 = goalBL.x + (goalBR.x - goalBL.x) * t;
-        const y2 = goalBL.y + (goalBR.y - goalBL.y) * t;
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      }
-      for (let i = 1; i < 8; i++) {
-        const t = i / 8;
-        const x1 = goalTL.x + (goalBL.x - goalTL.x) * t;
-        const y1 = goalTL.y + (goalBL.y - goalTL.y) * t;
-        const x2 = goalTR.x + (goalBR.x - goalTR.x) * t;
-        const y2 = goalTR.y + (goalBR.y - goalTR.y) * t;
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      }
-
-      // Net wave on goal
-      if (s.netWave > 0.01) {
-        const bulge = s.netWave * 20;
-        ctx.strokeStyle = `rgba(255, 255, 255, ${s.netWave * 0.5})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(goalTL.x, goalTL.y + bulge * 0.3);
-        ctx.quadraticCurveTo((goalTL.x + goalTR.x) / 2, goalTL.y + bulge, goalTR.x, goalTR.y + bulge * 0.3);
-        ctx.stroke();
-        s.netWave *= 0.92;
-      }
-
-      // Posts (with glow)
-      ctx.save();
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = 'rgba(255,255,255,0.8)';
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(goalTL.x, goalTL.y); ctx.lineTo(goalTR.x, goalTR.y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(goalTL.x, goalTL.y); ctx.lineTo(goalBL.x, goalBL.y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(goalTR.x, goalTR.y); ctx.lineTo(goalBR.x, goalBR.y); ctx.stroke();
-      ctx.restore();
-    }
-
-    // --- KEEPER ---
-    const kp = project(s.kx, s.ky, s.kz, W, H, focal);
-    if (kp) {
-      const kScale = kp.scale;
-      const kH = 1.85 * kScale; // taille gardien 1.85m
-      const kW = 0.6 * kScale;
-
-      // Move keeper toward dive target during shooting
-      if (s.phase === 'shooting' || s.phase === 'result') {
-        s.kProgress = Math.min(1, s.kProgress + 0.035);
-        const eased = 1 - Math.pow(1 - s.kProgress, 3);
-        s.kx = s.kdiveX * eased;
-        s.ky = 1.22 + (s.kdiveY - 1.22) * eased;
-      }
-
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.beginPath();
-      ctx.ellipse(kp.x, kp.y + 3, kW * 0.7, kW * 0.2, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Body
-      ctx.save();
-      ctx.shadowBlur = 12;
-      ctx.shadowColor = '#f59e0b';
-      ctx.fillStyle = '#f59e0b';
-      const bodyTop = kp.y - kH * 0.85;
-      const bodyH = kH * 0.55;
-      ctx.beginPath();
-      ctx.roundRect(kp.x - kW / 2, bodyTop, kW, bodyH, kW * 0.15);
-      ctx.fill();
-
-      // Head
-      ctx.fillStyle = '#fcd34d';
-      const headR = kH * 0.09;
-      ctx.beginPath();
-      ctx.arc(kp.x, kp.y - kH * 0.92, headR, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Arms — spread based on anim
-      const spread = s.kAnim === 'idle' ? 0.4 : Math.min(1, s.kProgress);
-      const armLen = kH * 0.35;
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = kW * 0.22;
-      ctx.lineCap = 'round';
-
-      // Left arm
-      const laX = kp.x - kW * 0.7 * spread - armLen * 0.3 * spread;
-      const laY = kp.y - kH * 0.7 - armLen * spread * 0.6;
-      ctx.beginPath(); ctx.moveTo(kp.x - kW / 2, kp.y - kH * 0.65); ctx.lineTo(laX, laY); ctx.stroke();
-
-      // Right arm
-      const raX = kp.x + kW * 0.7 * spread + armLen * 0.3 * spread;
-      const raY = kp.y - kH * 0.7 - armLen * spread * 0.6;
-      ctx.beginPath(); ctx.moveTo(kp.x + kW / 2, kp.y - kH * 0.65); ctx.lineTo(raX, raY); ctx.stroke();
-
-      // Gloves
-      ctx.fillStyle = '#dc2626';
-      ctx.beginPath(); ctx.arc(laX, laY, kW * 0.18, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(raX, raY, kW * 0.18, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    }
-
-    // --- BALL ---
-    let ballWorldY = s.by;
-    let ballWorldZ = s.bz;
-    let ballWorldX = s.bx;
-
-    if (s.phase === 'shooting') {
-      // Physics integration
-      const dt = 1 / 60;
-      s.bx += s.bvx * dt;
-      s.by += s.bvy * dt;
-      s.bz += s.bvz * dt;
-      s.bvy -= GRAVITY * dt;
-      s.bRot += s.bvz * dt * 3;
-
-      // Trail
-      s.bTrail.push({ x: s.bx, y: s.by, z: s.bz, life: 12 });
-      if (s.bTrail.length > 12) s.bTrail.shift();
-
-      // Stop when reaches goal
-      if (s.bz >= GOAL_Z) {
-        s.bz = GOAL_Z;
-        resolveResult();
-      }
-    } else if (s.phase === 'result') {
-      // Ball stays at final position
-      ballWorldX = s.bx; ballWorldY = s.by; ballWorldZ = s.bz;
-    }
-
-    // Ball trail
-    s.bTrail = s.bTrail.filter(tr => {
-      tr.life--;
-      if (tr.life <= 0) return false;
-      const p = project(tr.x, tr.y, tr.z, W, H, focal);
-      if (p) {
-        const alpha = tr.life / 12 * 0.4;
-        const r = BALL_R * p.scale * (tr.life / 12);
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
-      }
-      return true;
-    });
-
-    // Ball
-    const bp = project(ballWorldX, ballWorldY, ballWorldZ, W, H, focal);
-    if (bp) {
-      const br = BALL_R * bp.scale;
-
-      // Ball shadow on ground
-      const shadowP = project(ballWorldX, 0, ballWorldZ, W, H, focal);
-      if (shadowP) {
-        const shadowR = br * 1.2;
-        const shadowAlpha = Math.max(0.15, 0.5 - ballWorldY * 0.15);
-        ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
-        ctx.beginPath();
-        ctx.ellipse(shadowP.x, shadowP.y, shadowR * 1.1, shadowR * 0.35, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Ball body
-      ctx.save();
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = 'rgba(255,255,255,0.6)';
-      const ballGrad = ctx.createRadialGradient(bp.x - br * 0.35, bp.y - br * 0.4, br * 0.1, bp.x, bp.y, br);
-      ballGrad.addColorStop(0, '#ffffff');
-      ballGrad.addColorStop(0.6, '#e5e7eb');
-      ballGrad.addColorStop(0.9, '#9ca3af');
-      ballGrad.addColorStop(1, '#4b5563');
-      ctx.fillStyle = ballGrad;
-      ctx.beginPath(); ctx.arc(bp.x, bp.y, br, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-
-      // Pentagon pattern (rotating)
-      ctx.save();
-      ctx.translate(bp.x, bp.y);
-      ctx.rotate(s.bRot);
-      ctx.fillStyle = '#111827';
-      // Center pentagon
-      ctx.beginPath();
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-        const r = br * 0.35;
-        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-      }
-      ctx.closePath(); ctx.fill();
-      // Outer pentagons
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-        const px = Math.cos(a) * br * 0.7;
-        const py = Math.sin(a) * br * 0.7;
-        ctx.beginPath(); ctx.arc(px, py, br * 0.18, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.restore();
-
-      // Highlight
-      const shine = ctx.createRadialGradient(bp.x - br * 0.4, bp.y - br * 0.4, 0, bp.x - br * 0.4, bp.y - br * 0.4, br * 0.6);
-      shine.addColorStop(0, 'rgba(255,255,255,0.8)');
-      shine.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = shine;
-      ctx.beginPath(); ctx.arc(bp.x - br * 0.35, bp.y - br * 0.4, br * 0.5, 0, Math.PI * 2); ctx.fill();
-    }
-
-    // Kick leg animation
-    if (s.kickAnim > 0.01) {
-      const legPhase = 1 - s.kickAnim;
-      const legX = W / 2;
-      const legY = H * 0.92;
-      const legAngle = -Math.PI / 3 + legPhase * Math.PI / 1.5;
-      const legLen = W * 0.15;
-      ctx.save();
-      ctx.translate(legX, legY);
-      ctx.rotate(legAngle);
-      ctx.fillStyle = '#f59e0b';
-      ctx.beginPath();
-      ctx.roundRect(-W * 0.015, -legLen, W * 0.03, legLen, W * 0.015);
-      ctx.fill();
-      // Shoe
-      ctx.fillStyle = '#dc2626';
-      ctx.beginPath();
-      ctx.ellipse(0, -legLen - 6, W * 0.025, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      s.kickAnim -= 0.04;
-    }
-
-    // Aiming reticle
-    if (s.phase === 'aiming' && s.aimActive) {
-      const rp = project(s.tx, s.ty, GOAL_Z, W, H, focal);
-      if (rp) {
-        const pulse = 1 + Math.sin(time / 100) * 0.15;
-        ctx.strokeStyle = 'rgba(244, 63, 94, 0.9)';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(rp.x, rp.y, 12 * pulse, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(rp.x, rp.y, 20 * pulse, 0, Math.PI * 2); ctx.stroke();
-        // Crosshair
-        ctx.beginPath();
-        ctx.moveTo(rp.x - 28, rp.y); ctx.lineTo(rp.x - 8, rp.y);
-        ctx.moveTo(rp.x + 8, rp.y); ctx.lineTo(rp.x + 28, rp.y);
-        ctx.moveTo(rp.x, rp.y - 28); ctx.lineTo(rp.x, rp.y - 8);
-        ctx.moveTo(rp.x, rp.y + 8); ctx.lineTo(rp.x, rp.y + 28);
-        ctx.stroke();
-        // Center dot
-        ctx.fillStyle = 'rgba(244, 63, 94, 0.9)';
-        ctx.beginPath(); ctx.arc(rp.x, rp.y, 2, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-
-    // Particles
-    for (let i = s.particles.length - 1; i >= 0; i--) {
-      const p = s.particles[i];
-      p.x += p.vx; p.y += p.vy; p.vy += 0.0003;
-      p.life--;
-      if (p.life <= 0) { s.particles.splice(i, 1); continue; }
-      const a = p.life / p.maxLife;
-      ctx.globalAlpha = a;
-      ctx.fillStyle = `hsl(${p.hue}, 100%, 65%)`;
-      ctx.beginPath(); ctx.arc(p.x * W, p.y * H, 3 * a, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // Confetti
-    for (let i = s.confetti.length - 1; i >= 0; i--) {
-      const c = s.confetti[i];
-      c.x += c.vx; c.y += c.vy; c.vy += 0.0002;
-      c.rot += c.rotV; c.life--;
-      if (c.life <= 0 || c.y > 1.2) { s.confetti.splice(i, 1); continue; }
-      const a = Math.min(1, c.life / 40);
-      ctx.save();
-      ctx.globalAlpha = a;
-      ctx.translate(c.x * W, c.y * H);
-      ctx.rotate(c.rot);
-      ctx.fillStyle = c.color;
-      ctx.fillRect(-3, -6, 6, 12);
-      ctx.restore();
-    }
-    ctx.globalAlpha = 1;
-
-    // Result banner
-    if (s.phase === 'result' && s.lastResult) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-      ctx.fillRect(0, 0, W, H);
-      ctx.font = `bold ${Math.min(W * 0.11, 72)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const labels: Record<ShotResult, string> = { goal: 'BUT !', save: 'ARRÊTÉ !', post: 'POTEAU !', miss: 'RATÉ !' };
-      const colors: Record<ShotResult, string> = { goal: '#22c55e', save: '#ef4444', post: '#f59e0b', miss: '#ef4444' };
-      ctx.fillStyle = colors[s.lastResult];
-      ctx.shadowBlur = 30;
-      ctx.shadowColor = colors[s.lastResult];
-      ctx.fillText(labels[s.lastResult], W / 2, H / 2);
-      ctx.shadowBlur = 0;
-    }
-
-    // Flash
-    if (s.flash > 0.01) {
-      ctx.fillStyle = `hsla(${s.flashHue}, 100%, 60%, ${s.flash * 0.35})`;
-      ctx.fillRect(0, 0, W, H);
-      s.flash *= 0.9;
-    }
-
-    s.time++;
-  };
-
-  useEffect(() => {
-    let alive = true;
-    const loop = (time: number) => {
-      if (!alive) return;
-      render(time);
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
-    return () => { alive = false; if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, []);
-
   return (
-    <div className="container-custom py-6 md:py-10 max-w-5xl">
-      <div className="flex items-center justify-between mb-6">
-        <Link href={`/${locale}/game`} className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-emerald-600 transition group">
-          <ArrowLeft size={16} className="group-hover:-translate-x-1 transition" /> Hub
-        </Link>
-        <button onClick={toggleMute} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition">
-          {muteState ? <VolumeX size={18} /> : <Volume2 size={18} />}
-        </button>
-      </div>
+    <div className={isFullscreen ? 'fixed inset-0 z-[9999] bg-slate-950 flex flex-col' : 'container-custom py-6 md:py-10 max-w-5xl'}>
+      {!isFullscreen && (
+        <div className="flex items-center justify-between mb-6">
+          <Link href={`/${locale}/game`} className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-emerald-600 transition group">
+            <ArrowLeft size={16} className="group-hover:-translate-x-1 transition" /> Hub
+          </Link>
+          <div className="flex gap-2">
+            <button onClick={toggleMute} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+              {muteState ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
+            <button onClick={toggleFullscreen} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+              <Maximize2 size={18} />
+            </button>
+          </div>
+        </div>
+      )}
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <div className="rounded-2xl border border-emerald-900/50 bg-slate-950 overflow-hidden shadow-2xl shadow-emerald-500/10">
-            <div className="flex items-center justify-between p-3 md:p-4 bg-gradient-to-r from-slate-900 to-slate-950 text-white border-b border-slate-800">
+      <div className={isFullscreen ? 'grid lg:grid-cols-3 gap-3 p-3 h-full' : 'grid lg:grid-cols-3 gap-6'}>
+        <div className={isFullscreen ? 'lg:col-span-3 flex flex-col h-full' : 'lg:col-span-2'}>
+          <div className={`rounded-2xl border border-emerald-900/50 bg-slate-950 overflow-hidden shadow-2xl shadow-emerald-500/10 ${isFullscreen ? 'flex flex-col h-full' : ''}`}>
+            <div className="flex items-center justify-between p-3 md:p-4 bg-gradient-to-r from-slate-900 to-slate-950 text-white border-b border-slate-800 flex-wrap gap-2">
               <div>
                 <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Buts</p>
                 <p className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">{ui.goals} / {ui.shots}</p>
@@ -786,22 +682,30 @@ export default function PenaltyPage() {
                 <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold flex items-center gap-1 justify-center"><Crown size={12} /> Record</p>
                 <p className="text-lg font-bold text-yellow-400">{ui.best}</p>
               </div>
-              <button onClick={start} className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 font-semibold hover:opacity-90 transition flex items-center gap-1.5 text-sm shadow-lg shadow-emerald-500/40">
-                {ui.phase === 'ready' ? <Play size={16} /> : <RotateCcw size={16} />}
-                <span className="hidden sm:inline">{ui.phase === 'ready' ? 'Jouer' : 'Restart'}</span>
-              </button>
+              <div className="flex gap-1.5">
+                <button onClick={toggleMute} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition">
+                  {muteState ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                </button>
+                <button onClick={toggleFullscreen} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition">
+                  {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </button>
+                <button onClick={start} className="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 font-semibold hover:opacity-90 transition flex items-center gap-1.5 text-sm shadow-lg shadow-emerald-500/40">
+                  {ui.phase === 'ready' ? <Play size={16} /> : <RotateCcw size={16} />}
+                  <span className="hidden sm:inline">{ui.phase === 'ready' ? 'Jouer' : 'Restart'}</span>
+                </button>
+              </div>
             </div>
 
-            <div ref={containerRef} className="relative w-full bg-slate-950">
-              <canvas ref={canvasRef} onClick={onClick} onTouchStart={onTouch} className="absolute inset-0 w-full h-full touch-none select-none cursor-crosshair" />
+            <div ref={containerRef} className={`relative w-full bg-slate-950 ${isFullscreen ? 'flex-1 min-h-0' : ''}`} style={{ aspectRatio: isFullscreen ? 'auto' : '16/10' }}>
+              <div ref={mountRef} className="absolute inset-0" />
 
               {ui.phase === 'ready' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur text-white text-center p-4">
                   <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center mb-4 shadow-2xl shadow-emerald-500/40">
                     <Target size={36} />
                   </div>
-                  <h2 className="text-2xl font-bold mb-2">Penalty Shootout</h2>
-                  <p className="text-slate-400 mb-6 text-sm max-w-xs">5 tirs. Clique dans le but pour marquer. Le gardien plonge !</p>
+                  <h2 className="text-2xl font-bold mb-2">Penalty 3D</h2>
+                  <p className="text-slate-400 mb-6 text-sm max-w-xs">5 tirs. Clique dans le but pour tirer. Le gardien plonge en 3D temps réel.</p>
                   <button onClick={start} className="px-8 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 font-bold hover:opacity-90 transition shadow-lg shadow-emerald-500/40 flex items-center gap-2">
                     <Play size={20} /> Commencer
                   </button>
@@ -854,32 +758,34 @@ export default function PenaltyPage() {
           </div>
         </div>
 
-        <div className="lg:col-span-1">
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
-            <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2"><Trophy size={18} className="text-yellow-500" /> Classement</h2>
-            {!user ? (
-              <div className="text-center py-6">
-                <p className="text-sm text-slate-500 mb-3">Connecte-toi pour sauvegarder</p>
-                <Link href={`/${locale}/login`} className="inline-block bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition">Connexion</Link>
-              </div>
-            ) : leaderboard.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-6">Aucun score</p>
-            ) : (
-              <div className="space-y-2">
-                {leaderboard.map((e: any, i: number) => (
-                  <div key={i} className={`flex items-center gap-3 p-2 rounded-lg ${i === 0 ? 'bg-yellow-50 dark:bg-yellow-950/20' : i === 1 ? 'bg-slate-50 dark:bg-slate-800/50' : i === 2 ? 'bg-orange-50 dark:bg-orange-950/20' : ''}`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${i === 0 ? 'bg-yellow-400 text-yellow-900' : i === 1 ? 'bg-slate-300 text-slate-800' : i === 2 ? 'bg-orange-400 text-orange-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>{i + 1}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{e.full_name || 'Joueur'}</p>
-                      <p className="text-[10px] text-slate-500">{e.goals} buts</p>
+        {!isFullscreen && (
+          <div className="lg:col-span-1">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2"><Trophy size={18} className="text-yellow-500" /> Classement</h2>
+              {!user ? (
+                <div className="text-center py-6">
+                  <p className="text-sm text-slate-500 mb-3">Connecte-toi pour sauvegarder</p>
+                  <Link href={`/${locale}/login`} className="inline-block bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition">Connexion</Link>
+                </div>
+              ) : leaderboard.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">Aucun score</p>
+              ) : (
+                <div className="space-y-2">
+                  {leaderboard.map((e: any, i: number) => (
+                    <div key={i} className={`flex items-center gap-3 p-2 rounded-lg ${i === 0 ? 'bg-yellow-50 dark:bg-yellow-950/20' : i === 1 ? 'bg-slate-50 dark:bg-slate-800/50' : i === 2 ? 'bg-orange-50 dark:bg-orange-950/20' : ''}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${i === 0 ? 'bg-yellow-400 text-yellow-900' : i === 1 ? 'bg-slate-300 text-slate-800' : i === 2 ? 'bg-orange-400 text-orange-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>{i + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{e.full_name || 'Joueur'}</p>
+                        <p className="text-[10px] text-slate-500">{e.goals} buts</p>
+                      </div>
+                      <p className="font-mono font-bold text-emerald-600 text-sm">{e.score}</p>
                     </div>
-                    <p className="font-mono font-bold text-emerald-600 text-sm">{e.score}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
