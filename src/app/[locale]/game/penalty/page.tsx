@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Trophy, RotateCcw, Play, ArrowLeft, Target, Crown, Award, Volume2, VolumeX, Maximize2, Minimize2, CheckCircle2, XCircle, Flame, Zap } from 'lucide-react';
 import { initAudio, playKick, playCrowd, playWhistle, playPost, playSave, setMuted, isMuted } from '@/lib/game-audio';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 const GOAL_W = 7.32;
 const GOAL_H = 2.44;
@@ -16,15 +17,17 @@ const TOTAL_SHOTS = 5;
 const KEEPER_REACH = 1.05;
 const SHOT_DURATION = 0.72;
 const BALL_START = { x: 0, y: BALL_R, z: 0 };
-const SHOOTER_POS = { x: -0.35, y: 0, z: -1.2 };
-const CAMERA_POS = { x: -1.8, y: 2.1, z: -5.2 };
-const CAMERA_LOOK = { x: 0, y: 1.4, z: 8 };
+const SHOOTER_POS = { x: -0.4, y: 0, z: -1.4 };
+const CAMERA_POS = { x: -2.0, y: 2.2, z: -5.5 };
+const CAMERA_LOOK = { x: 0, y: 1.5, z: 8 };
+
+const PLAYER_MODEL_URL = '/models/player.glb';
+const KEEPER_MODEL_URL = '/models/keeper.glb';
+const FALLBACK_MODEL_URL = 'https://threejs.org/examples/models/gltf/Soldier.glb';
 
 type Phase = 'ready' | 'aiming' | 'shooting' | 'result' | 'done';
 type ShotResult = 'goal' | 'save' | 'post' | 'miss';
 type Quality = 'low' | 'medium' | 'high';
-type KeeperAnim = 'idle' | 'anticipate' | 'diveL' | 'diveR' | 'jump' | 'land' | 'celebrate' | 'frustrated';
-type ShooterAnim = 'idle' | 'runup' | 'kick' | 'followthrough';
 
 export default function PenaltyPage() {
   const locale = useLocale();
@@ -35,15 +38,21 @@ export default function PenaltyPage() {
   const [muteState, setMuteState] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [achievement, setAchievement] = useState<string | null>(null);
+  const [loadingModels, setLoadingModels] = useState(true);
+  const [modelsReady, setModelsReady] = useState(false);
 
   const T = useRef<any>({
-    scene: null, camera: null, renderer: null, clock: null,
+    scene: null, camera: null, renderer: null,
     ball: null, ballTrail: [] as THREE.Vector3[],
-    keeper: null as any, shooter: null as any,
+    player: null, keeper: null,
+    playerMixer: null, keeperMixer: null,
+    playerActions: {} as any, keeperActions: {} as any,
+    playerCurrent: 'idle' as string,
+    keeperCurrent: 'idle' as string,
     net: null, netBaseZ: 0,
     raycaster: null, goalPlane: null,
     animId: null,
-    floodlights: [] as any[],
+    modelsLoaded: false,
   });
 
   const S = useRef({
@@ -53,15 +62,9 @@ export default function PenaltyPage() {
     ballVel: new THREE.Vector3(0, 0, 0),
     ballSpin: new THREE.Vector3(0, 0, 0),
     ballCurve: 0,
-    keeperX: 0, keeperY: 0, keeperZ: GOAL_Z - 0.7,
-    keeperTargetX: 0, keeperTargetY: 0,
+    keeperX: 0, keeperTargetX: 0,
     keeperProgress: 0,
-    keeperAnim: 'idle' as KeeperAnim,
-    keeperAnimTime: 0,
-    keeperPhase: 0 as 0 | 1 | 2 | 3,
-    keeperLandY: 0,
-    shooterAnim: 'idle' as ShooterAnim,
-    shooterAnimTime: 0,
+    keeperDiveDir: 0,
     goals: 0, saves: 0, shots: 0,
     streak: 0, bestStreak: 0,
     lastResult: null as ShotResult | null,
@@ -219,239 +222,66 @@ export default function PenaltyPage() {
   };
 
   // ============================================================
-  // BUILDERS — HUMAN CROSS-BOX
+  // LOAD MODELS
   // ============================================================
-  const capsuleMesh = (r: number, len: number, mat: THREE.Material) => {
-    return new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 12), mat);
+  const loadModel = (url: string): Promise<any> => {
+    return new Promise((resolve) => {
+      const loader = new GLTFLoader();
+      loader.load(
+        url,
+        (gltf) => resolve(gltf),
+        undefined,
+        () => resolve(null) // fallback silently on error
+      );
+    });
   };
 
-  const buildKeeperModel = (scene: THREE.Scene, q: Quality) => {
-    const root = new THREE.Group();
-    const shadow = q !== 'low';
+  const setupCharacter = (gltf: any, scale: number, position: { x: number; y: number; z: number }, rotationY: number, scene: THREE.Scene) => {
+    if (!gltf) return null;
+    const model = gltf.scene.clone(true);
+    model.scale.setScalar(scale);
+    model.position.set(position.x, position.y, position.z);
+    model.rotation.y = rotationY;
 
-    // Materials
-    const skin = new THREE.MeshStandardMaterial({ color: 0xe8b98a, roughness: 0.85, metalness: 0 });
-    const jersey = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.7, metalness: 0.05 });
-    const jerseyDark = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.7 });
-    const shorts = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
-    const gloves = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4, metalness: 0.15 });
-    const socks = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.85 });
-    const boots = new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.35, metalness: 0.4 });
-    const hair = new THREE.MeshStandardMaterial({ color: 0x1a1209, roughness: 0.95 });
+    model.traverse((child: any) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach((m: any) => {
+            if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+          });
+        }
+      }
+    });
 
-    // Hips
-    const hips = new THREE.Group();
-    hips.position.y = 0.9;
-    root.add(hips);
+    scene.add(model);
 
-    // TORSO (chest + waist)
-    const chest = capsuleMesh(0.2, 0.35, jersey);
-    chest.position.y = 0.32;
-    chest.scale.set(1.15, 1, 0.7);
-    chest.castShadow = shadow;
-    hips.add(chest);
+    const mixer = new THREE.AnimationMixer(model);
+    const clips = gltf.animations || [];
+    const findClip = (name: string) => clips.find((c: any) => c.name.toLowerCase().includes(name.toLowerCase()));
 
-    const waist = capsuleMesh(0.16, 0.1, jerseyDark);
-    waist.position.y = 0.08;
-    waist.scale.set(1, 1, 0.7);
-    hips.add(waist);
+    const actions: any = {};
+    const idleClip = findClip('idle');
+    const runClip = findClip('run') || findClip('walk');
+    const tposeClip = findClip('tpose');
 
-    // NECK + HEAD
-    const neck = capsuleMesh(0.06, 0.06, skin);
-    neck.position.y = 0.58;
-    hips.add(neck);
+    if (idleClip) { actions.idle = mixer.clipAction(idleClip); actions.idle.play(); }
+    if (runClip) { actions.run = mixer.clipAction(runClip); }
+    if (tposeClip) { actions.tpose = mixer.clipAction(tposeClip); }
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 20, 16), skin);
-    head.position.y = 0.75;
-    head.scale.set(0.95, 1.05, 0.95);
-    head.castShadow = shadow;
-    hips.add(head);
-
-    const hairMesh = new THREE.Mesh(new THREE.SphereGeometry(0.145, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
-    hairMesh.position.y = 0.76;
-    hairMesh.rotation.x = -0.15;
-    hips.add(hairMesh);
-
-    // EYES
-    const eyeGeo = new THREE.SphereGeometry(0.018, 8, 6);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2 });
-    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL.position.set(-0.05, 0.76, 0.12);
-    hips.add(eyeL);
-    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeR.position.set(0.05, 0.76, 0.12);
-    hips.add(eyeR);
-
-    // ARMS — shoulder → upper → elbow → forearm → glove
-    const makeArm = (side: number) => {
-      const shoulder = new THREE.Group();
-      shoulder.position.set(0.24 * side, 0.48, 0);
-
-      const upper = capsuleMesh(0.07, 0.24, jersey);
-      upper.position.y = -0.16;
-      shoulder.add(upper);
-
-      const elbow = new THREE.Group();
-      elbow.position.y = -0.3;
-      const forearm = capsuleMesh(0.06, 0.24, skin);
-      forearm.position.y = -0.14;
-      elbow.add(forearm);
-
-      const glove = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), gloves);
-      glove.position.y = -0.3;
-      glove.scale.set(1, 1.15, 0.85);
-      elbow.add(glove);
-
-      shoulder.add(elbow);
-      hips.add(shoulder);
-
-      return { shoulder, elbow, glove };
-    };
-
-    const leftArm = makeArm(-1);
-    const rightArm = makeArm(1);
-
-    // LEGS — hip → thigh → knee → shin → boot
-    const makeLeg = (side: number) => {
-      const hip = new THREE.Group();
-      hip.position.set(0.09 * side, -0.02, 0);
-
-      const thigh = capsuleMesh(0.09, 0.22, shorts);
-      thigh.position.y = -0.18;
-      hip.add(thigh);
-
-      const knee = new THREE.Group();
-      knee.position.y = -0.36;
-      const shin = capsuleMesh(0.075, 0.28, socks);
-      shin.position.y = -0.17;
-      knee.add(shin);
-
-      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.08, 0.22), boots);
-      boot.position.set(0, -0.36, 0.05);
-      boot.castShadow = shadow;
-      knee.add(boot);
-
-      hip.add(knee);
-      hips.add(hip);
-
-      return { hip, knee, boot };
-    };
-
-    const leftLeg = makeLeg(-1);
-    const rightLeg = makeLeg(1);
-
-    root.position.set(0, 0, GOAL_Z - 0.7);
-    scene.add(root);
-
-    return {
-      root, hips, chest, head, hair: hairMesh,
-      leftArm, rightArm, leftLeg, rightLeg,
-    };
+    return { model, mixer, actions, current: 'idle' };
   };
 
-  const buildShooterModel = (scene: THREE.Scene, q: Quality) => {
-    const root = new THREE.Group();
-    const shadow = q !== 'low';
-
-    const skin = new THREE.MeshStandardMaterial({ color: 0xe0a878, roughness: 0.85 });
-    const jersey = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.7 });
-    const jerseyDark = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.7 });
-    const shorts = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
-    const socks = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.85 });
-    const boots = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4, metalness: 0.3 });
-    const hair = new THREE.MeshStandardMaterial({ color: 0x0a0503, roughness: 0.95 });
-
-    const hips = new THREE.Group();
-    hips.position.y = 0.9;
-    root.add(hips);
-
-    const chest = capsuleMesh(0.19, 0.33, jersey);
-    chest.position.y = 0.32;
-    chest.scale.set(1.15, 1, 0.68);
-    chest.castShadow = shadow;
-    hips.add(chest);
-
-    const waist = capsuleMesh(0.15, 0.08, jerseyDark);
-    waist.position.y = 0.08;
-    hips.add(waist);
-
-    const neck = capsuleMesh(0.055, 0.05, skin);
-    neck.position.y = 0.56;
-    hips.add(neck);
-
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.135, 20, 16), skin);
-    head.position.y = 0.72;
-    head.scale.set(0.95, 1.05, 0.95);
-    head.castShadow = shadow;
-    hips.add(head);
-
-    const hairMesh = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.6), hair);
-    hairMesh.position.y = 0.73;
-    hairMesh.rotation.x = -0.2;
-    hips.add(hairMesh);
-
-    const eyeGeo = new THREE.SphereGeometry(0.016, 8, 6);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
-    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL.position.set(-0.05, 0.73, 0.115);
-    hips.add(eyeL);
-    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeR.position.set(0.05, 0.73, 0.115);
-    hips.add(eyeR);
-
-    const makeArm = (side: number) => {
-      const shoulder = new THREE.Group();
-      shoulder.position.set(0.23 * side, 0.46, 0);
-      const upper = capsuleMesh(0.065, 0.23, jersey);
-      upper.position.y = -0.15;
-      shoulder.add(upper);
-      const elbow = new THREE.Group();
-      elbow.position.y = -0.29;
-      const forearm = capsuleMesh(0.055, 0.23, skin);
-      forearm.position.y = -0.14;
-      elbow.add(forearm);
-      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), skin);
-      hand.position.y = -0.28;
-      elbow.add(hand);
-      shoulder.add(elbow);
-      hips.add(shoulder);
-      return { shoulder, elbow, hand };
-    };
-
-    const leftArm = makeArm(-1);
-    const rightArm = makeArm(1);
-
-    const makeLeg = (side: number) => {
-      const hip = new THREE.Group();
-      hip.position.set(0.09 * side, -0.02, 0);
-      const thigh = capsuleMesh(0.09, 0.22, shorts);
-      thigh.position.y = -0.18;
-      hip.add(thigh);
-      const knee = new THREE.Group();
-      knee.position.y = -0.36;
-      const shin = capsuleMesh(0.075, 0.28, socks);
-      shin.position.y = -0.17;
-      knee.add(shin);
-      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.075, 0.24), boots);
-      boot.position.set(0, -0.36, 0.06);
-      boot.castShadow = shadow;
-      knee.add(boot);
-      hip.add(knee);
-      hips.add(hip);
-      return { hip, knee, boot };
-    };
-
-    const leftLeg = makeLeg(-1);
-    const rightLeg = makeLeg(1);
-
-    root.position.set(SHOOTER_POS.x, 0, SHOOTER_POS.z);
-    root.rotation.y = Math.PI * 0.05;
-    scene.add(root);
-
-    return {
-      root, hips, chest, head,
-      leftArm, rightArm, leftLeg, rightLeg,
-    };
+  const switchAnim = (char: any, animName: string, fade: number = 0.25) => {
+    if (!char || !char.actions || !char.actions[animName]) return;
+    if (char.current === animName) return;
+    const prev = char.actions[char.current];
+    const next = char.actions[animName];
+    if (prev) prev.fadeOut(fade);
+    next.reset().fadeIn(fade).play();
+    char.current = animName;
   };
 
   // ============================================================
@@ -509,7 +339,6 @@ export default function PenaltyPage() {
 
     // LIGHTS
     scene.add(new THREE.AmbientLight(0xffffff, quality === 'low' ? 0.95 : 0.55));
-
     const dirLight = new THREE.DirectionalLight(0xfff5e0, quality === 'low' ? 1.3 : 1.9);
     dirLight.position.set(-12, 24, 6);
     if (quality !== 'low') {
@@ -529,16 +358,14 @@ export default function PenaltyPage() {
           spot.position.set(x, 16, z);
           spot.target.position.set(0, 0, GOAL_Z);
           scene.add(spot, spot.target);
-          T.current.floodlights.push(spot);
         }
       }
     }
 
     // GRASS
-    const grassTex = texGrass(quality);
     const grass = new THREE.Mesh(
       new THREE.PlaneGeometry(90, 90),
-      new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95 })
+      new THREE.MeshStandardMaterial({ map: texGrass(quality), roughness: 0.95 })
     );
     grass.rotation.x = -Math.PI / 2;
     grass.position.set(0, 0, GOAL_Z + 5);
@@ -610,7 +437,7 @@ export default function PenaltyPage() {
     rightSide.position.x = GOAL_W / 2;
     scene.add(rightSide);
 
-    // PENALTY SPOT
+    // SPOT
     const spot = new THREE.Mesh(
       new THREE.CircleGeometry(0.15, 20),
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })
@@ -629,14 +456,9 @@ export default function PenaltyPage() {
     scene.add(ball);
     T.current.ball = ball;
 
-    // KEEPER + SHOOTER
-    T.current.keeper = buildKeeperModel(scene, quality);
-    T.current.shooter = buildShooterModel(scene, quality);
-
     // RAYCASTER
     T.current.raycaster = new THREE.Raycaster();
     T.current.goalPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -GOAL_Z);
-    T.current.clock = new THREE.Clock();
 
     // RESIZE
     const resize = () => {
@@ -676,48 +498,100 @@ export default function PenaltyPage() {
     };
     renderer.domElement.addEventListener('pointerdown', onPointer);
 
+    // LOAD MODELS (async)
+    (async () => {
+      // Try local player model first, then fallback to CDN
+      let playerGltf = await loadModel(PLAYER_MODEL_URL);
+      let keeperGltf = await loadModel(KEEPER_MODEL_URL);
+
+      // Fallback to CDN
+      if (!playerGltf || !keeperGltf) {
+        const fallback = await loadModel(FALLBACK_MODEL_URL);
+        if (!playerGltf) playerGltf = fallback;
+        if (!keeperGltf) keeperGltf = fallback;
+      }
+
+      if (!alive) return;
+
+      if (playerGltf) {
+        const player = setupCharacter(playerGltf, 1.0, SHOOTER_POS, Math.PI * 0.05, scene);
+        if (player) {
+          T.current.player = player;
+          T.current.playerMixer = player.mixer;
+          T.current.playerActions = player.actions;
+        }
+      }
+
+      if (keeperGltf) {
+        const keeper = setupCharacter(keeperGltf, 1.0, { x: 0, y: 0, z: GOAL_Z - 1.0 }, Math.PI, scene);
+        if (keeper) {
+          T.current.keeper = keeper;
+          T.current.keeperMixer = keeper.mixer;
+          T.current.keeperActions = keeper.actions;
+        }
+      }
+
+      T.current.modelsLoaded = true;
+      setModelsReady(true);
+      setLoadingModels(false);
+    })();
+
     // ANIMATE
     let last = performance.now();
     const animate = (now: number) => {
       if (!alive) return;
       const realDt = Math.min((now - last) / 1000, 0.05);
       last = now;
-      const time = now / 1000;
       const s = S.current;
-      s.time = time;
+      s.time = now / 1000;
 
       const dt = s.slowmo > 0 ? realDt * 0.35 : realDt;
       if (s.slowmo > 0) s.slowmo -= realDt;
 
-      // CAMERA
+      // Camera
       s.cameraZoom += ((s.phase === 'shooting' || s.phase === 'result') ? 1 : 0) * realDt * 1.5 - s.cameraZoom * realDt * 2;
       s.cameraZoom = Math.max(0, Math.min(1, s.cameraZoom));
       camera.position.z = CAMERA_POS.z + s.cameraZoom * 1.2;
       camera.position.y = CAMERA_POS.y + s.cameraZoom * 0.2;
       if (s.cameraShake > 0.01) {
         camera.position.x = CAMERA_POS.x + (Math.random() - 0.5) * s.cameraShake * 0.3;
-        camera.position.y += (Math.random() - 0.5) * s.cameraShake * 0.2;
         s.cameraShake *= 0.9;
       } else {
         camera.position.x = CAMERA_POS.x;
       }
       camera.lookAt(CAMERA_LOOK.x, CAMERA_LOOK.y, CAMERA_LOOK.z);
 
-      // KEEPER ANIMATION
-      animateKeeper(T.current.keeper, dt, time);
-      // SHOOTER ANIMATION
-      animateShooter(T.current.shooter, dt, time);
+      // Mixers
+      if (T.current.playerMixer) T.current.playerMixer.update(dt);
+      if (T.current.keeperMixer) T.current.keeperMixer.update(dt);
 
-      // BALL PHYSICS
+      // Keeper dive animation (move the whole model)
+      if (T.current.keeper) {
+        const km = T.current.keeper.model;
+        if (s.phase === 'shooting' || s.phase === 'result') {
+          s.keeperProgress = Math.min(1, s.keeperProgress + dt * 2.2);
+          const ease = 1 - Math.pow(1 - s.keeperProgress, 3);
+          km.position.x = s.keeperTargetX * ease * 0.85;
+          if (s.keeperDiveDir !== 0) {
+            km.rotation.z = s.keeperDiveDir * ease * 0.9;
+            km.position.y = Math.sin(ease * Math.PI) * 0.4;
+          }
+        } else {
+          // Idle sway
+          km.position.x = Math.sin(now / 800) * 0.08;
+          km.position.y = 0;
+          km.rotation.z = 0;
+        }
+      }
+
+      // Ball physics
       if (s.phase === 'shooting' && !s.resolved) {
-        // Magnus effect (curve)
         s.ballVel.x += s.ballCurve * dt;
         s.ballPos.x += s.ballVel.x * dt;
         s.ballPos.y += s.ballVel.y * dt;
         s.ballPos.z += s.ballVel.z * dt;
         s.ballVel.y -= GRAVITY * dt;
 
-        // Spin visual
         s.ballSpin.x += s.ballVel.z * dt * 8;
         s.ballSpin.y += s.ballVel.x * dt * 5;
 
@@ -727,22 +601,17 @@ export default function PenaltyPage() {
           ball.rotation.y = s.ballSpin.y;
         }
 
-        if (quality !== 'low') {
-          T.current.ballTrail.push(s.ballPos.clone());
-          if (T.current.ballTrail.length > 14) T.current.ballTrail.shift();
-        }
-
         if (s.ballPos.z > GOAL_Z - 3 && s.slowmo <= 0.05) s.slowmo = 0.35;
         if (s.ballPos.z >= GOAL_Z) { s.resolved = true; resolveResult(); }
       }
 
-      // NET WAVE
+      // Net
       if (s.netWave > 0.01 && T.current.net) {
-        T.current.net.position.z = T.current.netBaseZ + Math.sin(time * 28) * s.netWave * 0.18;
+        T.current.net.position.z = T.current.netBaseZ + Math.sin(now / 40) * s.netWave * 0.18;
         s.netWave *= 0.92;
       }
 
-      // PARTICLES
+      // Particles
       for (let i = s.particles.length - 1; i >= 0; i--) {
         const p = s.particles[i];
         p.mesh.position.x += p.vx * dt;
@@ -757,8 +626,6 @@ export default function PenaltyPage() {
           s.particles.splice(i, 1);
           continue;
         }
-        const lr = p.life / p.maxLife;
-        p.mesh.scale.setScalar(0.02 + lr * 0.08);
       }
 
       renderer.render(scene, camera);
@@ -784,241 +651,6 @@ export default function PenaltyPage() {
   }, []);
 
   // ============================================================
-  // KEEPER ANIMATION — multi-phase
-  // ============================================================
-  const animateKeeper = (k: any, dt: number, time: number) => {
-    if (!k) return;
-    const s = S.current;
-    s.keeperAnimTime += dt;
-
-    // Reset
-    k.hips.rotation.set(0, 0, 0);
-    k.root.rotation.set(0, 0, 0);
-    k.root.position.set(0, 0, GOAL_Z - 0.7);
-    k.head.rotation.set(0, 0, 0);
-    k.leftArm.shoulder.rotation.set(0, 0, 0.25);
-    k.rightArm.shoulder.rotation.set(0, 0, -0.25);
-    k.leftArm.elbow.rotation.set(0, 0, 0);
-    k.rightArm.elbow.rotation.set(0, 0, 0);
-    k.leftLeg.hip.rotation.set(0, 0, 0);
-    k.rightLeg.hip.rotation.set(0, 0, 0);
-    k.leftLeg.knee.rotation.set(0, 0, 0);
-    k.rightLeg.knee.rotation.set(0, 0, 0);
-
-    const anim = s.keeperAnim;
-    const t = s.keeperAnimTime;
-
-    if (anim === 'idle') {
-      // Realistic idle sway + weight shift
-      const sway = Math.sin(time * 1.8) * 0.05;
-      const bounce = Math.abs(Math.sin(time * 2.5)) * 0.025;
-      const weightShift = Math.sin(time * 1.2) * 0.03;
-      k.hips.position.x = sway + weightShift;
-      k.root.position.y = bounce;
-      k.head.rotation.y = Math.sin(time * 1.4) * 0.18;
-      k.head.rotation.x = Math.sin(time * 0.8) * 0.06;
-      k.leftArm.shoulder.rotation.z = 0.35 + Math.sin(time * 2) * 0.12;
-      k.rightArm.shoulder.rotation.z = -0.35 - Math.sin(time * 2) * 0.12;
-      k.leftArm.elbow.rotation.x = -0.15;
-      k.rightArm.elbow.rotation.x = -0.15;
-      k.leftLeg.hip.rotation.z = 0.05;
-      k.rightLeg.hip.rotation.z = -0.05;
-    }
-    else if (anim === 'anticipate') {
-      // Crouch + lean forward
-      const p = Math.min(1, s.keeperProgress);
-      const ease = p * p;
-      k.root.position.y = -0.12 * ease;
-      k.hips.rotation.x = 0.15 * ease;
-      k.leftLeg.knee.rotation.x = 0.4 * ease;
-      k.rightLeg.knee.rotation.x = 0.4 * ease;
-      k.leftArm.shoulder.rotation.z = 0.7 * ease;
-      k.rightArm.shoulder.rotation.z = -0.7 * ease;
-    }
-    else if (anim === 'diveL' || anim === 'diveR') {
-      // 3-phase dive: launch → extend → land
-      const p = Math.min(1, s.keeperProgress);
-      const dir = anim === 'diveL' ? -1 : 1;
-
-      if (p < 0.35) {
-        // Launch: crouch then jump
-        const lp = p / 0.35;
-        k.root.position.y = -0.1 * (1 - lp) + 0.25 * lp;
-        k.hips.rotation.x = 0.12;
-        k.leftLeg.knee.rotation.x = 0.35 * (1 - lp * 0.5);
-        k.rightLeg.knee.rotation.x = 0.35 * (1 - lp * 0.5);
-      } else if (p < 0.75) {
-        // Extend: body horizontal, arms stretched
-        const ep = (p - 0.35) / 0.4;
-        k.root.position.y = 0.25 + ep * 0.35;
-        k.root.rotation.z = dir * ep * 1.1;
-        k.hips.rotation.x = 0.3;
-        // Both arms reach toward ball
-        if (dir < 0) {
-          k.leftArm.shoulder.rotation.z = 0.25 + ep * 2.4;
-          k.leftArm.shoulder.rotation.x = -0.3 * ep;
-          k.leftArm.elbow.rotation.z = -0.2 * ep;
-          k.rightArm.shoulder.rotation.z = -0.25 - ep * 1.4;
-        } else {
-          k.rightArm.shoulder.rotation.z = -0.25 - ep * 2.4;
-          k.rightArm.shoulder.rotation.x = -0.3 * ep;
-          k.rightArm.elbow.rotation.z = 0.2 * ep;
-          k.leftArm.shoulder.rotation.z = 0.25 + ep * 1.4;
-        }
-        k.leftLeg.hip.rotation.z = dir * ep * 0.5;
-        k.rightLeg.hip.rotation.z = dir * ep * 0.5;
-      } else {
-        // Land
-        const lp = (p - 0.75) / 0.25;
-        k.root.position.y = 0.6 * (1 - lp) - 0.05 * lp;
-        k.root.rotation.z = dir * 1.1 * (1 - lp * 0.3);
-        k.hips.rotation.x = 0.25;
-        if (dir < 0) {
-          k.leftArm.shoulder.rotation.z = 2.65;
-          k.rightArm.shoulder.rotation.z = -1.65;
-        } else {
-          k.leftArm.shoulder.rotation.z = 1.65;
-          k.rightArm.shoulder.rotation.z = -2.65;
-        }
-        k.leftLeg.knee.rotation.x = 0.3 * lp;
-        k.rightLeg.knee.rotation.x = 0.3 * lp;
-      }
-    }
-    else if (anim === 'jump') {
-      const p = Math.min(1, s.keeperProgress);
-      // High jump
-      if (p < 0.5) {
-        k.root.position.y = Math.sin(p * Math.PI) * 1.4;
-        k.leftArm.shoulder.rotation.z = 0.25 + p * 2 * 2.2;
-        k.rightArm.shoulder.rotation.z = -0.25 - p * 2 * 2.2;
-        k.leftLeg.knee.rotation.x = p * 0.6;
-        k.rightLeg.knee.rotation.x = p * 0.6;
-      } else {
-        const lp = (p - 0.5) / 0.5;
-        k.root.position.y = 1.4 * (1 - lp);
-        k.leftArm.shoulder.rotation.z = 2.25 * (1 - lp * 0.4);
-        k.rightArm.shoulder.rotation.z = -2.25 * (1 - lp * 0.4);
-      }
-    }
-    else if (anim === 'celebrate') {
-      // Fist pump
-      const pump = Math.sin(t * 10) * 0.3;
-      k.leftArm.shoulder.rotation.z = 2.4 + pump;
-      k.rightArm.shoulder.rotation.z = -2.4 - pump;
-      k.leftArm.elbow.rotation.x = -0.6;
-      k.rightArm.elbow.rotation.x = -0.6;
-      k.root.position.y = Math.abs(Math.sin(t * 8)) * 0.12;
-      k.head.rotation.x = -0.2;
-    }
-    else if (anim === 'frustrated') {
-      // Head down, hands on knees
-      k.head.rotation.x = 0.6;
-      k.hips.rotation.x = 0.25;
-      k.leftArm.shoulder.rotation.z = 0.4;
-      k.leftArm.elbow.rotation.x = 0.6;
-      k.rightArm.shoulder.rotation.z = -0.4;
-      k.rightArm.elbow.rotation.x = 0.6;
-      k.leftLeg.knee.rotation.x = 0.25;
-      k.rightLeg.knee.rotation.x = 0.25;
-    }
-
-    // Apply keeper X position (dive/save displacement)
-    if (anim === 'diveL' || anim === 'diveR' || anim === 'jump') {
-      const ease = 1 - Math.pow(1 - Math.min(1, s.keeperProgress), 3);
-      k.root.position.x = s.keeperTargetX * ease;
-    } else {
-      k.root.position.x = k.root.position.x * 0.85;
-    }
-  };
-
-  // ============================================================
-  // SHOOTER ANIMATION
-  // ============================================================
-  const animateShooter = (sh: any, dt: number, time: number) => {
-    if (!sh) return;
-    const s = S.current;
-    s.shooterAnimTime += dt;
-
-    // Reset
-    sh.hips.rotation.set(0, 0, 0);
-    sh.root.rotation.set(0, Math.PI * 0.05, 0);
-    sh.root.position.set(SHOOTER_POS.x, 0, SHOOTER_POS.z);
-    sh.leftArm.shoulder.rotation.set(0, 0, 0.3);
-    sh.rightArm.shoulder.rotation.set(0, 0, -0.3);
-    sh.leftArm.elbow.rotation.set(0, 0, 0);
-    sh.rightArm.elbow.rotation.set(0, 0, 0);
-    sh.leftLeg.hip.rotation.set(0, 0, 0);
-    sh.rightLeg.hip.rotation.set(0, 0, 0);
-    sh.leftLeg.knee.rotation.set(0, 0, 0);
-    sh.rightLeg.knee.rotation.set(0, 0, 0);
-    sh.head.rotation.set(0, 0, 0);
-
-    const anim = s.shooterAnim;
-    const t = s.shooterAnimTime;
-
-    if (anim === 'idle') {
-      // Breathing + weight shift
-      const breath = Math.sin(time * 1.5) * 0.02;
-      sh.hips.position.y = 0.9 + breath;
-      sh.head.rotation.y = Math.sin(time * 0.8) * 0.1;
-      sh.leftArm.shoulder.rotation.z = 0.35 + Math.sin(time * 2) * 0.08;
-      sh.rightArm.shoulder.rotation.z = -0.35 - Math.sin(time * 2) * 0.08;
-      sh.leftLeg.hip.rotation.z = 0.05;
-      sh.rightLeg.hip.rotation.z = -0.05;
-    }
-    else if (anim === 'runup') {
-      // Approach the ball: right leg winds back
-      const p = Math.min(1, s.shooterAnimTime / 0.35);
-      const ease = p * p;
-      // Shift body forward
-      sh.root.position.z = SHOOTER_POS.z + ease * 0.7;
-      sh.hips.rotation.x = -0.15 * ease;
-      // Right leg pulls back
-      sh.rightLeg.hip.rotation.x = -1.0 * ease;
-      sh.rightLeg.knee.rotation.x = 1.3 * ease;
-      // Left arm swings forward for balance
-      sh.leftArm.shoulder.rotation.x = -0.9 * ease;
-      sh.rightArm.shoulder.rotation.x = 0.7 * ease;
-      sh.head.rotation.x = 0.15 * ease;
-    }
-    else if (anim === 'kick') {
-      // Contact with ball
-      const p = Math.min(1, s.shooterAnimTime / 0.15);
-      const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-      sh.root.position.z = SHOOTER_POS.z + 0.7;
-      sh.hips.rotation.x = -0.15 - ease * 0.3;
-      // Right leg swings forward
-      sh.rightLeg.hip.rotation.x = -1.0 + ease * 2.6;
-      sh.rightLeg.knee.rotation.x = 1.3 - ease * 1.2;
-      // Left leg plants
-      sh.leftLeg.hip.rotation.x = 0.15;
-      sh.leftLeg.knee.rotation.x = 0.2;
-      // Arms
-      sh.leftArm.shoulder.rotation.x = -0.9 + ease * 0.5;
-      sh.leftArm.shoulder.rotation.z = 0.3 + ease * 0.6;
-      sh.rightArm.shoulder.rotation.x = 0.7 - ease * 1.2;
-      sh.rightArm.shoulder.rotation.z = -0.3 - ease * 0.5;
-      sh.head.rotation.x = 0.15;
-    }
-    else if (anim === 'followthrough') {
-      // Leg extended, body leaning
-      const p = Math.min(1, s.shooterAnimTime / 0.6);
-      sh.root.position.z = SHOOTER_POS.z + 0.7;
-      sh.hips.rotation.x = -0.45;
-      sh.rightLeg.hip.rotation.x = 1.6 - p * 0.3;
-      sh.rightLeg.knee.rotation.x = 0.1;
-      sh.leftLeg.hip.rotation.x = 0.2;
-      sh.leftLeg.knee.rotation.x = 0.3;
-      sh.leftArm.shoulder.rotation.x = -0.4;
-      sh.leftArm.shoulder.rotation.z = 0.9;
-      sh.rightArm.shoulder.rotation.x = -0.5;
-      sh.rightArm.shoulder.rotation.z = -0.8;
-      // Slight backward fall as momentum
-      sh.root.rotation.x = -p * 0.15;
-    }
-  };
-
-  // ============================================================
   // GAMEPLAY
   // ============================================================
   const shoot = (tx: number, ty: number) => {
@@ -1027,24 +659,15 @@ export default function PenaltyPage() {
     s.phase = 'shooting';
     s.resolved = false;
     s.keeperProgress = 0;
-    s.keeperAnimTime = 0;
-    s.shooterAnimTime = 0;
 
-    // Start shooter animation
-    s.shooterAnim = 'runup';
+    // Trigger player run animation
+    if (T.current.player) switchAnim(T.current.player, 'run', 0.15);
 
-    // Ball velocity (with slight curve)
     const dx = tx - s.ballPos.x;
     const dy = ty - s.ballPos.y;
     const dz = GOAL_Z - s.ballPos.z;
-    const duration = SHOT_DURATION;
-    s.ballVel.set(
-      dx / duration,
-      dy / duration + 0.5 * GRAVITY * duration,
-      dz / duration
-    );
-    // Magnus curve — random lateral bias
-    s.ballCurve = (Math.random() - 0.5) * 6;
+    s.ballVel.set(dx / SHOT_DURATION, dy / SHOT_DURATION + 0.5 * GRAVITY * SHOT_DURATION, dz / SHOT_DURATION);
+    s.ballCurve = (Math.random() - 0.5) * 5;
 
     // Keeper AI
     const guessCorrect = Math.random() < 0.36;
@@ -1056,21 +679,18 @@ export default function PenaltyPage() {
     }
     kTargetX = Math.max(-GOAL_W / 2 + 0.5, Math.min(GOAL_W / 2 - 0.5, kTargetX));
     s.keeperTargetX = kTargetX;
-    s.keeperTargetY = ty;
+    s.keeperDiveDir = kTargetX < -0.4 ? -1 : kTargetX > 0.4 ? 1 : 0;
 
-    // Choose keeper anim
-    if (ty > GOAL_H * 0.65 && Math.random() < 0.55) {
-      s.keeperAnim = 'jump';
-    } else {
-      s.keeperAnim = kTargetX < 0 ? 'diveL' : 'diveR';
-    }
+    // Keeper run anim
+    if (T.current.keeper) switchAnim(T.current.keeper, 'run', 0.2);
 
     playKick();
     setUi(p => ({ ...p, phase: 'shooting' }));
 
-    // Shooter animation timing
-    setTimeout(() => { if (s.phase === 'shooting') s.shooterAnim = 'kick'; }, 280);
-    setTimeout(() => { if (s.phase === 'shooting') s.shooterAnim = 'followthrough'; }, 420);
+    // After shot completes → back to idle
+    setTimeout(() => {
+      if (T.current.player) switchAnim(T.current.player, 'idle', 0.4);
+    }, 800);
   };
 
   const resolveResult = () => {
@@ -1089,23 +709,19 @@ export default function PenaltyPage() {
       result = 'post';
       playPost();
       s.cameraShake = 3;
-      s.keeperAnim = 'celebrate';
     } else if (!insideX || !insideY) {
       result = 'miss';
-      s.keeperAnim = 'celebrate';
     } else {
-      const kpx = s.keeperTargetX * (1 - Math.pow(1 - s.keeperProgress, 3));
-      const kpy = 1.2 + s.keeperY;
+      const kpx = s.keeperTargetX * (1 - Math.pow(1 - s.keeperProgress, 3)) * 0.85;
+      const kpy = 1.2;
       const kdist = Math.sqrt((bx - kpx) ** 2 + (by - kpy) ** 2);
       if (kdist < KEEPER_REACH && s.keeperProgress > 0.25) {
         result = 'save';
         playSave();
-        s.keeperAnim = 'celebrate';
         s.cameraShake = 2;
       } else {
         result = 'goal';
         s.netWave = 1;
-        s.keeperAnim = 'frustrated';
         s.cameraShake = 5;
         s.flash = 0.6;
         s.flashHue = 120;
@@ -1113,6 +729,9 @@ export default function PenaltyPage() {
         spawnConfetti();
       }
     }
+
+    // Keeper goes back to idle
+    if (T.current.keeper) switchAnim(T.current.keeper, 'idle', 0.5);
 
     s.lastResult = result;
     s.phase = 'result';
@@ -1137,8 +756,6 @@ export default function PenaltyPage() {
       shotsLog: [...s.shotsLog], streak: s.streak,
     }));
 
-    // Keeper celebrate/frustrated timer → then reset
-    s.keeperAnimTime = 0;
     setTimeout(() => {
       if (s.mode === 'classic' && s.shots >= TOTAL_SHOTS) {
         s.phase = 'done';
@@ -1183,10 +800,7 @@ export default function PenaltyPage() {
     s.ballSpin.set(0, 0, 0);
     s.ballCurve = 0;
     s.keeperProgress = 0;
-    s.keeperAnim = 'idle';
-    s.keeperAnimTime = 0;
-    s.shooterAnim = 'idle';
-    s.shooterAnimTime = 0;
+    s.keeperDiveDir = 0;
     s.resolved = false;
     s.netWave = 0;
     s.lastResult = null;
@@ -1196,7 +810,11 @@ export default function PenaltyPage() {
       T.current.ball.rotation.set(0, 0, 0);
     }
     if (T.current.net) T.current.net.position.z = T.current.netBaseZ;
-    T.current.ballTrail = [];
+    if (T.current.keeper) {
+      T.current.keeper.model.position.set(0, 0, GOAL_Z - 1.0);
+      T.current.keeper.model.rotation.z = 0;
+      switchAnim(T.current.keeper, 'idle', 0.4);
+    }
     S.current.particles.forEach(p => {
       T.current.scene?.remove(p.mesh);
       (p.mesh.geometry as any)?.dispose?.();
@@ -1296,19 +914,29 @@ export default function PenaltyPage() {
             <div ref={containerRef} className={`relative w-full bg-slate-950 ${isFullscreen ? 'flex-1 min-h-0' : ''}`} style={{ aspectRatio: isFullscreen ? 'auto' : '16/10' }}>
               <div ref={mountRef} className="absolute inset-0" />
 
+              {loadingModels && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 z-30">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center mb-4 animate-pulse">
+                    <Target size={32} />
+                  </div>
+                  <p className="text-white text-sm font-semibold">Chargement des joueurs...</p>
+                  <p className="text-slate-400 text-xs mt-1">Modèles 3D réalistes en cours d'import</p>
+                </div>
+              )}
+
               {achievement && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-sm font-bold shadow-2xl animate-bounce z-10">
                   {achievement}
                 </div>
               )}
 
-              {ui.phase === 'ready' && (
+              {ui.phase === 'ready' && !loadingModels && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur text-white text-center p-4 z-20">
                   <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center mb-4 shadow-2xl shadow-emerald-500/40">
                     <Target size={36} />
                   </div>
                   <h2 className="text-2xl md:text-3xl font-black mb-2 bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">Penalty 3D</h2>
-                  <p className="text-slate-400 mb-6 text-sm max-w-sm">Joueur + Gardien réalistes · Physique 3D · Ambiance stade</p>
+                  <p className="text-slate-400 mb-6 text-sm max-w-sm">Joueurs 3D réalistes · Physique · Ambiance stade</p>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <button onClick={() => start('classic')} className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 font-bold hover:opacity-90 transition shadow-lg shadow-emerald-500/40 flex items-center justify-center gap-2">
                       <Play size={18} /> Best of 5
