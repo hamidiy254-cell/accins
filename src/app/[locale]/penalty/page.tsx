@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { Trophy, Play, ArrowLeft, Target, Award, Loader2, Gamepad2, Zap, Flame, Goal } from 'lucide-react';
+import { Trophy, Play, ArrowLeft, Target, Award, Loader2, Gamepad2, Zap, Flame, Goal, Crown, RotateCcw } from 'lucide-react';
 
 type Phase = 'ready' | 'aiming' | 'shooting' | 'keeper' | 'result' | 'done';
 
