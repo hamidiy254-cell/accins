@@ -487,9 +487,7 @@ export default function PenaltyPage() {
 
   return (
     <div className="container-custom py-6 md:py-10 max-w-5xl">
-      <Link href={`/${locale}/game`} className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-emerald-600 mb-6 transition">
-        <ArrowLeft size={16} /> {t('back')}
-      </Link>
+      
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
@@ -498,9 +496,7 @@ export default function PenaltyPage() {
           </h1>
           <p className="text-slate-500 mt-1">5 tirs. Cliquez où vous voulez tirer.</p>
         </div>
-        <Link href={`/${locale}/game`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold shadow-lg shadow-cyan-500/30 hover:opacity-90 transition">
-          <Gamepad2 size={18} /> Snake
-        </Link>
+        
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">

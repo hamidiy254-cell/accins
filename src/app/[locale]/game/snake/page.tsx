@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { Trophy, RotateCcw, Play, ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, Crown, Pause, Gamepad2, Award, Flame, Target } from 'lucide-react';
+import { Trophy, RotateCcw, Play, ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, Crown, Pause, Gamepad2, Award, Flame } from 'lucide-react';
 
 const GRID = 22;
 const TICK_BASE = 155;
@@ -481,9 +481,7 @@ export default function GamePage() {
           </h1>
           <p className="text-slate-500 mt-1">{t('subtitle')}</p>
         </div>
-        <Link href={`/${locale}/penalty`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow-lg shadow-emerald-500/30 hover:opacity-90 transition">
-          <Target size={18} /> Penalty
-        </Link>
+        
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
